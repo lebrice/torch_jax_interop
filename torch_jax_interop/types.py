@@ -1,5 +1,4 @@
 import dataclasses
-import inspect
 from typing import Any, ClassVar, Mapping, Protocol, TypeVar
 
 K = TypeVar("K")
@@ -31,8 +30,8 @@ class _DataclassMeta(type):
 class Dataclass(metaclass=_DataclassMeta):
     """A class which is used to check if a given object is a dataclass.
 
-    This plays nicely with @functools.singledispatch, allowing us to register functions to be used
-    for dataclass inputs.
+    This plays nicely with @functools.singledispatch, allowing us to register functions
+    to be used for dataclass inputs.
     """
 
 

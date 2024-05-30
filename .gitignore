@@ -163,3 +163,4 @@ cython_debug/
 
 # Benchmarks created by `pytest-benchmark`.
 .benchmarks
+.vscode

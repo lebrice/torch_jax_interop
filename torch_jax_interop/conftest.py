@@ -1,6 +1,34 @@
 import torch
 import pytest
+import jax
 import jax.numpy as jnp
+
+
+@pytest.fixture(scope="session", params=[123], ids="seed={}".format)
+def seed(request: pytest.FixtureRequest) -> int:
+    return request.param
+
+
+@pytest.fixture(scope="session", params=["cpu", "cuda"])
+def torch_device(request: pytest.FixtureRequest):
+    device_str = request.param
+    if "cuda" in device_str and not torch.cuda.is_available():
+        pytest.skip("Needs a GPU to run but cuda isn't available.")
+    return torch.device(device_str)
+
+
+@pytest.fixture(
+    scope="session", params=["cpu", "cuda", "rocm", "tpu"], ids="backend={}".format
+)
+def jax_device(request: pytest.FixtureRequest) -> jax.Device:
+    backend_str = request.param
+    try:
+        devices = jax.devices(backend=request.param)
+    except RuntimeError:
+        devices = None
+    if not devices:
+        pytest.skip(f"No devices found for backend {backend_str}.")
+    return devices[0]
 
 
 @pytest.fixture(

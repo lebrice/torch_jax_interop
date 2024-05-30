@@ -7,11 +7,10 @@ from typing import Any, Callable
 
 import jax
 import torch
-from jax import dlpack as jax_dlpack
-from torch.utils import dlpack as torch_dlpack
-from .types import DataclassType, NestedMapping, Dataclass, K, V
-from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
+from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
+
+from .types import Dataclass, DataclassType, K, NestedMapping
 
 
 @functools.singledispatch
@@ -55,7 +54,7 @@ torch_to_jax.register(torch.Tensor, torch_to_jax_tensor)
 
 @torch_to_jax.register(collections.abc.Mapping)
 def torch_to_jax_dict(
-    value: NestedMapping[K, torch.Tensor]
+    value: NestedMapping[K, torch.Tensor],
 ) -> NestedMapping[K, jax.Array]:
     """Converts a dict of PyTorch tensors into a dict of jax.Arrays."""
     return type(value)(**{k: torch_to_jax(v) for k, v in value.items()})  # type: ignore

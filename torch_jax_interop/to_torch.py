@@ -3,13 +3,14 @@ from __future__ import annotations
 import collections.abc
 import dataclasses
 import functools
-from typing import Any, Callable, Concatenate
+from typing import Any, Callable
 
 import jax
 import torch
-from jax import dlpack as jax_dlpack
+from jax.dlpack import to_dlpack as jax_to_dlpack  # type: ignore (not exported there?)
 from torch.utils import dlpack as torch_dlpack
-from .types import DataclassType, NestedMapping, Dataclass
+
+from .types import Dataclass, DataclassType, NestedMapping
 
 
 @functools.singledispatch
@@ -37,7 +38,7 @@ def no_op(v: Any) -> Any:
 
 def jax_to_torch_tensor(value: jax.Array, /) -> torch.Tensor:
     """Converts a Jax array into a torch.Tensor."""
-    dpack = jax_dlpack.to_dlpack(value)  # type: ignore (not exported there? weird.)
+    dpack = jax_to_dlpack(value)
     return torch_dlpack.from_dlpack(dpack)
 
 
@@ -48,7 +49,7 @@ jax_to_torch.register(jax.Array, jax_to_torch_tensor)
 
 @jax_to_torch.register(collections.abc.Mapping)
 def jax_to_torch_mapping(
-    value: NestedMapping[str, jax.Array | Any]
+    value: NestedMapping[str, jax.Array | Any],
 ) -> NestedMapping[str, torch.Tensor | Any]:
     """Converts a dict of Jax arrays into a dict of PyTorch tensors ."""
     return type(value)(**{k: jax_to_torch(v) for k, v in value.items()})  # type: ignore

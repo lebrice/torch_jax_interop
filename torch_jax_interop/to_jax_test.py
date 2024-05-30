@@ -1,26 +1,11 @@
-import time
-
 import jax
+import jax.numpy as jnp
 import numpy
 import pytest
 import torch
 from pytest_benchmark.fixture import BenchmarkFixture
 
 from torch_jax_interop import jax_to_torch, torch_to_jax
-import jax.numpy as jnp
-
-
-@pytest.fixture(scope="session", params=[123], ids="seed={}".format)
-def seed(request: pytest.FixtureRequest) -> int:
-    return request.param
-
-
-@pytest.fixture(scope="session", params=["cpu", "cuda"])
-def device(request: pytest.FixtureRequest):
-    device_str = request.param
-    if "cuda" in device_str and not torch.cuda.is_available():
-        pytest.skip("Needs a GPU to run but cuda isn't available.")
-    return torch.device(device_str)
 
 
 @pytest.mark.parametrize(
@@ -39,22 +24,29 @@ def device(request: pytest.FixtureRequest):
     ids="shape={}".format,
 )
 def test_torch_to_jax_tensor(
-    device: torch.device,
+    torch_device: torch.device,
     shape: tuple[int, ...],
     torch_dtype: torch.dtype,
     jax_dtype: jax.numpy.dtype,
     seed: int,
     benchmark: BenchmarkFixture,
 ):
-    if numpy.prod(shape) >= 1_000_000 and device.type == "cpu":
+    if numpy.prod(shape) >= 1_000_000 and torch_device.type == "cpu":
         pytest.skip("Skipping test with large tensor on CPU.")
 
-    gen = torch.Generator(device=device).manual_seed(seed)
+    gen = torch.Generator(device=torch_device).manual_seed(seed)
     if torch_dtype.is_floating_point:
-        torch_value = torch.rand(shape, device=device, generator=gen, dtype=torch_dtype)
+        torch_value = torch.rand(
+            shape, device=torch_device, generator=gen, dtype=torch_dtype
+        )
     else:
         torch_value = torch.randint(
-            low=0, high=100, size=shape, device=device, generator=gen, dtype=torch_dtype
+            low=0,
+            high=100,
+            size=shape,
+            device=torch_device,
+            generator=gen,
+            dtype=torch_dtype,
         )
     assert torch_value.shape == shape
 

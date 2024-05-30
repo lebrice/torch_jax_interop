@@ -12,7 +12,7 @@ This conversion happens thanks the `dlpack` format, which is a common format for
 
 ## Installation
 ```bash
-pip install git+https://www.github.com/mila-iqia/torch-jax-interop
+pip install torch-jax-interop
 ```
 
 ## Usage

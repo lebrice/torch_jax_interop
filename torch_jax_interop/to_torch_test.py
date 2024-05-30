@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.test_util
 import jaxlib.xla_extension
 import numpy
 import pytest
@@ -61,3 +62,24 @@ def test_jax_to_torch_tensor(
     # round-trip:
     jax_round_trip = torch_to_jax(torch_value)
     numpy.testing.assert_allclose(jax_round_trip, jax_value)
+
+
+def some_jax_function(x: jnp.ndarray) -> jnp.ndarray:
+    return x + jnp.ones_like(x)
+
+
+def test_jax_to_torch_function(jax_device: torch.device, benchmark: BenchmarkFixture):
+    jax_input = jax.device_put(jnp.arange(5), device=jax_device)
+    jax_function = some_jax_function
+    expected_jax_output = jax_function(jax_input)
+
+    torch_input = jax_to_torch(jax_input)
+    torch_function = jax_to_torch(jax_function)
+    torch_output = benchmark(torch_function, torch_input)
+
+    jax_output = torch_to_jax(torch_output)
+    # todo: dtypes might be mismatched for int64 and float64
+    numpy.testing.assert_allclose(jax_output, expected_jax_output)
+
+    # todo: Should it return a jax.Array when given a jax.Array as input?
+    # ? = torch_function(jax_input)

@@ -79,3 +79,27 @@ def test_torch_to_jax_tensor(
         )
     else:
         torch.testing.assert_close(torch_value, torch_round_trip)
+
+
+def some_torch_function(x: torch.Tensor) -> torch.Tensor:
+    return x + torch.ones_like(x)
+
+
+def test_torch_to_jax_function(
+    torch_device: torch.device,
+    benchmark: BenchmarkFixture,
+):
+    torch_input = torch.arange(5, dtype=torch.int32, device=torch_device)
+    torch_function = some_torch_function
+    expected_torch_output = torch_function(torch_input)
+
+    jax_input = torch_to_jax(torch_input)
+    jax_function = torch_to_jax(torch_function)
+    jax_output = benchmark(jax_function, jax_input)
+
+    torch_output = jax_to_torch(jax_output)
+    # todo: dtypes might be mismatched for int64 and float64
+    torch.testing.assert_close(torch_output, expected_torch_output)
+
+    # todo: Should it return torch Tensor when given a torch Tensor?
+    # ? = jax_function(torch_input)

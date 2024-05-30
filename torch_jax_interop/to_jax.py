@@ -12,7 +12,7 @@ import torch
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
 from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 
-from .types import Dataclass, DataclassType, K, NestedMapping
+from .types import Dataclass, DataclassType, K, NestedMapping, is_sequence_of
 
 
 @functools.singledispatch
@@ -104,9 +104,13 @@ def torch_to_jax_callable(torch_callable: Callable) -> Callable:
     return _wrapped
 
 
-def torch_to_jax_nn_module(model: torch.nn.Module):
+def torch_to_jax_nn_module(
+    model: torch.nn.Module,
+) -> tuple[jax.custom_vjp[Any], tuple[jax.Array, ...]]:
     # Convert a Pytorch model to a jax function and parameters
     jax_fn, jax_params = pytorch2jax.convert_pytnn_to_jax(model)
+    assert is_sequence_of(jax_params, jax.Array)
+    assert isinstance(jax_params, tuple)
     return jax_fn, jax_params
 
 

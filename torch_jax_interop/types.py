@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, ClassVar, Mapping, Protocol, TypeVar
+from typing import Any, ClassVar, Mapping, Protocol, Sequence, TypeGuard, TypeVar
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -41,6 +41,17 @@ class DataclassInstance(Protocol):
 
 
 DataclassType = TypeVar("DataclassType", bound=DataclassInstance)
+
+
+def is_sequence_of(
+    object: Any, item_type: type[V] | tuple[type[V], ...]
+) -> TypeGuard[Sequence[V]]:
+    """Used to check (and tell the type checker) that `object` is a sequence of items of
+    type `V`."""
+    try:
+        return all(isinstance(value, item_type) for value in object)
+    except TypeError:
+        return False
 
 
 # def jit[C: Callable, **P](

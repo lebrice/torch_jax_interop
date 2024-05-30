@@ -6,6 +6,7 @@ import torch
 from pytest_benchmark.fixture import BenchmarkFixture
 
 from torch_jax_interop import jax_to_torch, torch_to_jax
+from torch_jax_interop.to_jax import torch_to_jax_nn_module
 
 
 @pytest.mark.parametrize(
@@ -119,7 +120,7 @@ def test_torch_to_jax_nn_module(torch_device: torch.device):
     expected_torch_output.backward(gradient=torch.ones_like(expected_torch_output))
     expected_input_grad = torch_input.grad
 
-    jax_net_fn, jax_net_params = torch_to_jax(torch_net)
+    jax_net_fn, jax_net_params = torch_to_jax_nn_module(torch_net)
 
     for jax_param, torch_param in zip(jax_net_params, torch_params.values()):
         torch.testing.assert_close(jax_to_torch(jax_param), torch_param)

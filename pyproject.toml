@@ -11,6 +11,7 @@ python = "^3.11"
 jax = {extras = ["cuda12"], version = "^0.4.28"}
 torch = "^2.3.0"
 pytorch2jax = "^0.1.0"
+flax = "^0.8.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.1"

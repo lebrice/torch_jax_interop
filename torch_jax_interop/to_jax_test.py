@@ -103,3 +103,39 @@ def test_torch_to_jax_function(
 
     # todo: Should it return torch Tensor when given a torch Tensor?
     # ? = jax_function(torch_input)
+
+
+def test_torch_to_jax_nn_module(torch_device: torch.device):
+    with torch_device:
+        torch_net = torch.nn.Sequential(
+            torch.nn.Linear(10, 10),
+            torch.nn.ReLU(),
+            torch.nn.Linear(10, 1),
+        )
+        torch_params = dict(torch_net.named_parameters())
+        torch_input = torch.randn(1, 10, requires_grad=True)
+    expected_torch_output = torch_net(torch_input)
+    assert isinstance(expected_torch_output, torch.Tensor)
+    expected_torch_output.backward(gradient=torch.ones_like(expected_torch_output))
+    expected_input_grad = torch_input.grad
+
+    jax_net_fn, jax_net_params = torch_to_jax(torch_net)
+
+    for jax_param, torch_param in zip(jax_net_params, torch_params.values()):
+        torch.testing.assert_close(jax_to_torch(jax_param), torch_param)
+
+    jax_input = torch_to_jax(torch_input)
+    jax_output = jax_net_fn(jax_net_params, jax_input)
+
+    torch_output = jax_to_torch(jax_output)
+    torch.testing.assert_close(torch_output, expected_torch_output)
+
+    def loss_fn(params, input):
+        return jax_net_fn(params, input).sum()
+
+    grad_fn = jax.grad(loss_fn, argnums=1)
+
+    input_grad = grad_fn(jax_net_params, jax_input)
+    torch_input_grad = jax_to_torch(input_grad)
+
+    torch.testing.assert_close(torch_input_grad, expected_input_grad)

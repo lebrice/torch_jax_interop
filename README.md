@@ -2,6 +2,10 @@
 
 Simple utility functions to simplify interoperability between jax and torch
 
+See also: https://github.com/subho406/pytorch2jax is very similar. We actually use some
+of their code to convert nn.Modules to a jax function, although this feature isn't as
+well tested as the rest of the code..
+
 
 This repository contains utilities for converting PyTorch Tensors to JAX arrays and vice versa.
 This conversion happens thanks the `dlpack` format, which is a common format for exchanging tensors between different deep learning frameworks. Crucially, this format allows for zero-copy tensor sharing between PyTorch and JAX.

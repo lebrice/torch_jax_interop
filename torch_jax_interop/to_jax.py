@@ -7,9 +7,9 @@ from typing import Any, Callable
 
 import functorch
 import jax
+import pytorch2jax
 import torch
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
-from pytorch2jax import convert_pytnn_to_jax as torch_to_jax_nn_module
 from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 
 from .types import Dataclass, DataclassType, K, NestedMapping
@@ -104,7 +104,12 @@ def torch_to_jax_callable(torch_callable: Callable) -> Callable:
     return _wrapped
 
 
-# Convert a Pytorch model to a jax function and parameters
+def torch_to_jax_nn_module(model: torch.nn.Module):
+    # Convert a Pytorch model to a jax function and parameters
+    jax_fn, jax_params = pytorch2jax.convert_pytnn_to_jax(model)
+    return jax_fn, jax_params
+
+
 torch_to_jax.register(torch.nn.Module, torch_to_jax_nn_module)
 
 

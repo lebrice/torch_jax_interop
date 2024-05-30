@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "torch-jax-interop"
+version = "0.0.1"
+description = "Utility to convert Tensors from Jax to Torch and vice-versa"
+authors = ["Fabrice Normandin <normandf@mila.quebec>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+jax = {extras = ["cuda12"], version = "^0.4.28"}
+torch = "^2.3.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.1"
+pytest-regressions = "^2.5.0"
+pytest-benchmark = "^4.0.0"
+pytest-skip-slow = "^0.0.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

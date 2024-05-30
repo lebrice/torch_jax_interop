@@ -810,6 +810,22 @@ pytest = ">=6.2.0"
 test = ["tox"]
 
 [[package]]
+name = "pytorch2jax"
+version = "0.1.0"
+description = "Convert PyTorch models to Jax functions and Flax models"
+optional = false
+python-versions = ">=3.6, <4"
+files = [
+    {file = "pytorch2jax-0.1.0-py3-none-any.whl", hash = "sha256:93313fe032b8fe5b404dcd7daed6c9b96ff6964a593a0849c70ac29a480f2867"},
+    {file = "pytorch2jax-0.1.0.tar.gz", hash = "sha256:c579bbd23e1c7902c5ee636f0d32a24cd065302a30e4365b28b4dcd5f92e9936"},
+]
+
+[package.dependencies]
+jax = "*"
+jaxlib = "*"
+torch = "*"
+
+[[package]]
 name = "pyyaml"
 version = "6.0.1"
 description = "YAML parser and emitter for Python"
@@ -1048,4 +1064,4 @@ test = ["covdefaults (>=2.3)", "coverage (>=7.2.7)", "coverage-enable-subprocess
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "9093a9beff80d36880e5276052548c9b27a1f893a69ff7173f2d8b8d398fa9e6"
+content-hash = "dc7e71076f7ebd2c27c1ca7946ffa7591fa17b86ffaf03432e5e86a00ceb3d74"

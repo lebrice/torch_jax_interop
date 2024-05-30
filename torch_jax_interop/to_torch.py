@@ -25,9 +25,10 @@ def jax_to_torch(value: Any, /) -> Any:
     Returns:
       a PyTorch tensor
     """
-    raise NotImplementedError(
-        f"No registered handler for converting value of type {type(value)} to jax! (value={value})"
-    )
+    return value
+    # raise NotImplementedError(
+    #     f"No registered handler for converting value of type {type(value)} to jax! (value={value})"
+    # )
 
 
 # Keep `None`s the same.

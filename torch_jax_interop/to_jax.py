@@ -3,6 +3,7 @@ from __future__ import annotations
 import collections.abc
 import dataclasses
 import functools
+import logging
 from typing import Any, Callable
 
 import functorch
@@ -12,7 +13,9 @@ import torch
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
 from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 
-from .types import Dataclass, DataclassType, K, NestedMapping, is_sequence_of
+from torch_jax_interop.utils import log_once  # type: ignore
+
+from .types import V, Dataclass, DataclassType, K, NestedMapping, is_sequence_of
 
 
 @functools.singledispatch
@@ -27,13 +30,14 @@ def torch_to_jax(value: Any, /) -> Any:
     Returns:
       a JAX array
     """
+    log_once(
+        f"No registered handler for values of type {type(value)}, returning it as-is.",
+        level=logging.DEBUG,
+    )
     return value
-    # raise NotImplementedError(
-    #     f"No registered handler for converting value of type {type(value)} to jax! (value={value})"
-    # )
 
 
-@torch_to_jax.register(type(None))
+@torch_to_jax.register(None | int | float | str | bool | bytes)
 def no_op(v: Any) -> Any:
     return v
 
@@ -53,6 +57,16 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
 # Register it like this so the type hints are preserved on the functions (which are also called
 # directly in some places).
 torch_to_jax.register(torch.Tensor, torch_to_jax_tensor)
+
+
+@torch_to_jax.register(tuple)
+def torch_to_jax_tuple(value: tuple) -> tuple:
+    return type(value)(*[torch_to_jax(v) for v in value])  # type: ignore
+
+
+@torch_to_jax.register(list)
+def torch_to_jax_list(value: list) -> list:
+    return list(torch_to_jax(v) for v in value)
 
 
 @torch_to_jax.register(collections.abc.Mapping)

@@ -4,7 +4,7 @@ import collections.abc
 import dataclasses
 import functools
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, overload
 
 import functorch
 import jax
@@ -13,12 +13,47 @@ import torch
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
 from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 
-from torch_jax_interop.utils import log_once  # type: ignore
+from .types import (
+    Dataclass,
+    DataclassType,
+    K,
+    NestedDict,
+    NestedMapping,
+    is_sequence_of,
+)
+from .utils import log_once
 
-from .types import V, Dataclass, DataclassType, K, NestedMapping, is_sequence_of
+
+@overload
+def torch_to_jax(value: torch.Tensor, /) -> jax.Array:
+    ...
 
 
-@functools.singledispatch
+@overload
+def torch_to_jax(value: torch.device, /) -> jax.Device:
+    ...
+
+
+@overload
+def torch_to_jax(value: tuple[torch.Tensor, ...], /) -> tuple[jax.Array, ...]:
+    ...
+
+
+@overload
+def torch_to_jax(value: list[torch.Tensor], /) -> list[jax.Array]:
+    ...
+
+
+@overload
+def torch_to_jax(value: NestedDict[K, torch.Tensor], /) -> NestedDict[K, jax.Array]:
+    ...
+
+
+@overload
+def torch_to_jax(value: Any, /) -> Any:
+    ...
+
+
 def torch_to_jax(value: Any, /) -> Any:
     """Converts PyTorch tensors to JAX arrays.
 
@@ -35,6 +70,9 @@ def torch_to_jax(value: Any, /) -> Any:
         level=logging.DEBUG,
     )
     return value
+
+
+torch_to_jax = functools.singledispatch(torch_to_jax)
 
 
 @torch_to_jax.register(None | int | float | str | bool | bytes)

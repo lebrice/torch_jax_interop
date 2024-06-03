@@ -4,19 +4,47 @@ import collections.abc
 import dataclasses
 import functools
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, overload
 
 import jax
 import torch
 from jax.dlpack import to_dlpack as jax_to_dlpack  # type: ignore (not exported there?)
 from torch.utils import dlpack as torch_dlpack
 
-from torch_jax_interop.utils import log_once
+from .types import Dataclass, DataclassType, K, NestedDict, NestedMapping
+from .utils import log_once
 
-from .types import Dataclass, DataclassType, NestedMapping, V
+
+@overload
+def jax_to_torch(value: jax.Array, /) -> torch.Tensor:
+    ...
 
 
-@functools.singledispatch
+@overload
+def jax_to_torch(value: jax.Device, /) -> torch.device:
+    ...
+
+
+@overload
+def jax_to_torch(value: tuple[jax.Array, ...], /) -> tuple[torch.Tensor, ...]:
+    ...
+
+
+@overload
+def jax_to_torch(value: list[jax.Array], /) -> list[torch.Tensor]:
+    ...
+
+
+@overload
+def jax_to_torch(value: NestedDict[K, jax.Array], /) -> NestedDict[K, torch.Tensor]:
+    ...
+
+
+@overload
+def jax_to_torch(value: Any, /) -> Any:
+    ...
+
+
 def jax_to_torch(value: Any, /) -> Any:
     """Converts JAX arrays to PyTorch Tensors.
 
@@ -33,6 +61,11 @@ def jax_to_torch(value: Any, /) -> Any:
         level=logging.DEBUG,
     )
     return value
+
+
+# Make it a singledispatch here instead of above, so the overloads are presented as
+# options for code completion.
+jax_to_torch = functools.singledispatch(jax_to_torch)  # type: ignore
 
 
 # Keep `None`s the same.

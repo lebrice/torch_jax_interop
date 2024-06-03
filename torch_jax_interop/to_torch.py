@@ -4,6 +4,7 @@ import collections.abc
 import dataclasses
 import functools
 import logging
+from logging import getLogger as get_logger
 from typing import Any, Callable, overload
 
 import jax
@@ -13,6 +14,8 @@ from torch.utils import dlpack as torch_dlpack
 
 from .types import Dataclass, DataclassType, K, NestedDict, NestedMapping
 from .utils import log_once
+
+logger = get_logger(__name__)
 
 
 @overload
@@ -57,7 +60,8 @@ def jax_to_torch(value: Any, /) -> Any:
       a PyTorch tensor
     """
     log_once(
-        f"No registered handler for values of type {type(value)}, returning it as-is.",
+        logger,
+        message=f"No registered handler for values of type {type(value)}, returning it as-is.",
         level=logging.DEBUG,
     )
     return value

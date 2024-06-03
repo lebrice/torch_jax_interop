@@ -4,6 +4,7 @@ import collections.abc
 import dataclasses
 import functools
 import logging
+from logging import getLogger as get_logger
 from typing import Any, Callable, overload
 
 import functorch
@@ -22,6 +23,8 @@ from .types import (
     is_sequence_of,
 )
 from .utils import log_once
+
+logger = get_logger(__name__)
 
 
 @overload
@@ -66,13 +69,14 @@ def torch_to_jax(value: Any, /) -> Any:
       a JAX array
     """
     log_once(
-        f"No registered handler for values of type {type(value)}, returning it as-is.",
+        logger,
+        message=f"No registered handler for values of type {type(value)}, returning it as-is.",
         level=logging.DEBUG,
     )
     return value
 
 
-torch_to_jax = functools.singledispatch(torch_to_jax)
+torch_to_jax = functools.singledispatch(torch_to_jax)  # type: ignore
 
 
 @torch_to_jax.register(None | int | float | str | bool | bytes)

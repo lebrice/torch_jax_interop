@@ -1,3 +1,6 @@
+import logging
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 import numpy
@@ -140,3 +143,22 @@ def test_torch_to_jax_nn_module(torch_device: torch.device):
     torch_input_grad = jax_to_torch(input_grad)
 
     torch.testing.assert_close(torch_input_grad, expected_input_grad)
+
+
+class FooBar:
+    pass
+
+
+@pytest.mark.parametrize("unsupported_value", [FooBar()])
+def test_log_once_on_unsupported_value(
+    unsupported_value: Any, caplog: pytest.LogCaptureFixture
+):
+    with caplog.at_level(logging.DEBUG):
+        assert torch_to_jax(unsupported_value) is unsupported_value
+    assert len(caplog.records) == 1
+    assert "No registered handler for values of type" in caplog.records[0].getMessage()
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        assert torch_to_jax(unsupported_value) is unsupported_value
+    assert len(caplog.records) == 0

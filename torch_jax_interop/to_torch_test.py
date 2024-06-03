@@ -1,3 +1,6 @@
+import logging
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 import jax.test_util
@@ -69,7 +72,7 @@ def some_jax_function(x: jnp.ndarray) -> jnp.ndarray:
 
 
 def test_jax_to_torch_function(jax_device: torch.device, benchmark: BenchmarkFixture):
-    jax_input = jax.device_put(jnp.arange(5), device=jax_device)
+    jax_input: jax.Array = jax.device_put(jnp.arange(5), device=jax_device)
     jax_function = some_jax_function
     expected_jax_output = jax_function(jax_input)
 
@@ -83,3 +86,22 @@ def test_jax_to_torch_function(jax_device: torch.device, benchmark: BenchmarkFix
 
     # todo: Should it return a jax.Array when given a jax.Array as input?
     # ? = torch_function(jax_input)
+
+
+class FooBar:
+    pass
+
+
+@pytest.mark.parametrize("unsupported_value", [FooBar()])
+def test_log_once_on_unsupported_value(
+    unsupported_value: Any, caplog: pytest.LogCaptureFixture
+):
+    with caplog.at_level(logging.DEBUG):
+        assert jax_to_torch(unsupported_value) is unsupported_value
+    assert len(caplog.records) == 1
+    assert "No registered handler for values of type" in caplog.records[0].getMessage()
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        assert jax_to_torch(unsupported_value) is unsupported_value
+    assert len(caplog.records) == 0

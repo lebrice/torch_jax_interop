@@ -104,12 +104,13 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
         log_once(
             logger,
             message=(
-                f"Unable to converting tensor of shape {value.shape} to jax.Array in-place: {err} "
-                f"Will attempt to convert a flattened view of this tensor instead."
+                f"Unable to view tensor of shape {value.shape} as a jax.Array in-place: {err} "
+                f"Tensors of this shape will be flattened and unflattened (which may or may not require making a copy)."
             ),
-            level=logging.ERROR,
+            level=logging.WARNING,
         )
-
+    # NOTE: This may or may not involve making a copy of the tensor.
+    # See https://pytorch.org/docs/stable/generated/torch.flatten.html#torch.flatten
     flattened_value = value.flatten()
     dlpack = torch_to_dlpack(flattened_value)
     array: jax.Array = jax_from_dlpack(dlpack, copy=False)

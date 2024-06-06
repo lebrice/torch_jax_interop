@@ -183,14 +183,14 @@ class JaxModule(torch.nn.Module, Generic[Params]):
     def forward(self, input: torch.Tensor, /) -> torch.Tensor:
         # todo: check if we could somehow pass an arbitrary number of input arguments instead of just one.
         output = JaxFunction.apply(
-            input,
             self.params_treedef,
             self.jax_function,
+            input,
             *self.params,
         )
-        assert isinstance(output, tuple) and len(output) == 2
-        out, _jvp_function = output
-        return out
+        assert isinstance(output, torch.Tensor)
+        assert output.requires_grad == input.requires_grad
+        return output
 
     if typing.TYPE_CHECKING:
         __call__ = forward
@@ -201,9 +201,10 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
 
     @staticmethod
     def forward(
-        input: torch.Tensor,
+        ctx: torch.autograd.function.BackwardCFunction,
         params_treedef: PyTreeDef,
         jax_function: Callable[[Params, jax.Array], jax.Array],
+        input: torch.Tensor,
         *flat_params: torch.Tensor,  # need to flatten the params for autograd to understand that they need a gradient.
     ):
         from .to_jax import torch_to_jax
@@ -211,49 +212,56 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
         jax_input = torch_to_jax(input)
         jax_params = jax.tree.unflatten(params_treedef, map(torch_to_jax, flat_params))
         output, jvp_function = jax.vjp(jax_function, jax_params, jax_input)
+        # Save the function to use to compute the backward pass.
+        ctx.jvp_function = jvp_function  # type: ignore
         output = jax_to_torch(output)
-        return output, jvp_function
+        return output
 
-    # setup_context is responsible for calling methods and/or assigning to
-    # the ctx object. Please do not do additional compute (e.g. add
-    # Tensors together) in setup_context.
-    @staticmethod
-    def setup_context(
-        ctx: torch.autograd.function.BackwardCFunction, inputs: tuple, output: tuple
-    ):
-        input, params_treedef, jax_function, *params = inputs
-        output, jvp_function = output
-        ctx.jvp_function = jvp_function  # type: ignore   # saving for backward.
+    # # setup_context is responsible for calling methods and/or assigning to
+    # # the ctx object. Please do not do additional compute (e.g. add
+    # # Tensors together) in setup_context.
+    # @staticmethod
+    # def setup_context(
+    #     ctx: torch.autograd.function.BackwardCFunction, inputs: tuple, output: tuple
+    # ):
+    #     input, params_treedef, jax_function, *params = inputs
+    #     output, jvp_function = output
+    #     ctx.jvp_function = jvp_function  # type: ignore   # saving for backward.
 
+    @torch.autograd.function.once_differentiable
     @staticmethod
     def backward(
         ctx: torch.autograd.function.NestedIOFunction,
         grad_output: torch.Tensor,
-        _jvp_function_grad: None,
     ):
         from .to_jax import torch_to_jax
 
-        input_need_grad, _, _, *params_needs_grad = ctx.needs_input_grad
+        _, _, input_needs_grad, *params_need_grad = ctx.needs_input_grad
 
-        grad_input = None
-        flat_params_grads = tuple(None for _ in params_needs_grad)
-        if input_need_grad or any(params_needs_grad):
-            assert all(params_needs_grad)  # assuming every parameter needs a gradient.
+        input_grad = None
+        flat_param_grads = tuple(None for _ in params_need_grad)
+        if input_needs_grad or any(params_need_grad):
+            logger.debug(f"{input_needs_grad=}, {params_need_grad=}")
+            assert all(params_need_grad) and input_needs_grad  # FIXME: debugging.
             jvp_function = ctx.jvp_function  # type: ignore
-            jax_grad_output = torch_to_jax(grad_output)
-            jax_grad_params, jax_input_grad = jvp_function(jax_grad_output)
-            flat_params_grads = jax.tree.map(
-                jax_to_torch, jax.tree.leaves(jax_grad_params)
-            )
-            # Only give out the gradients if they were requested.
-            if input_need_grad:
-                grad_input = jax_to_torch(jax_input_grad)
-            flat_params_grads = tuple(
-                flat_param_grad if params_needs_grad[i] else None
-                for i, flat_param_grad in enumerate(flat_params_grads)
+            _jax_grad_output = torch_to_jax(grad_output)
+            _jax_grad_params, _jax_input_grad = jvp_function(_jax_grad_output)
+            flat_param_grads = jax.tree.leaves(
+                jax.tree.map(jax_to_torch, _jax_grad_params)
             )
 
-        return grad_input, None, None, *flat_params_grads
+            # Only give out the gradients if they were requested.
+            flat_param_grads = tuple(
+                flat_param_grad if params_need_grad[i] else None
+                for i, flat_param_grad in enumerate(flat_param_grads)
+            )
+            input_grad = jax_to_torch(_jax_input_grad) if input_needs_grad else None
+
+        # Check that we created all the gradients we needed to.
+        assert (input_grad is not None) == input_needs_grad
+        for i, param_needs_grad in enumerate(params_need_grad):
+            assert (flat_param_grads[i] is not None) == param_needs_grad
+        return None, None, input_grad, *flat_param_grads
 
     @staticmethod
     def jvp(

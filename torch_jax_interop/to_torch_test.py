@@ -276,7 +276,7 @@ def test_jax_and_torch_modules_have_same_forward_pass(
     torch.testing.assert_close(jax_output, torch_output)
 
 
-def test_using_jax_module_at_start_of_torch_graph(
+def test_use_jax_module_in_torch_graph(
     jax_network_and_params: tuple[flax.linen.Module, VariableDict],
     torch_input: torch.Tensor,
     tensor_regression: TensorRegressionFixture,
@@ -304,8 +304,6 @@ def test_using_jax_module_at_start_of_torch_graph(
 
     output = wrapped_jax_module(input)
     assert isinstance(output, torch.Tensor) and output.requires_grad
-    output.mean().backward()
-    assert output.grad is not None
 
     loss = torch.nn.functional.cross_entropy(output, labels, reduction="mean")
     loss.backward()
@@ -314,7 +312,6 @@ def test_using_jax_module_at_start_of_torch_graph(
         p.requires_grad and p.grad is not None for p in wrapped_jax_module.parameters()
     )
 
-    assert output.grad is not None
     assert input.grad is not None
     tensor_regression.check(
         {
@@ -322,6 +319,7 @@ def test_using_jax_module_at_start_of_torch_graph(
             "output": output,
             "loss": loss,
             "input_grad": input.grad,
-            "output_grad": output.grad,
         }
+        | {name: p for name, p in wrapped_jax_module.named_parameters()},
+        include_gpu_name_in_stats=False,
     )

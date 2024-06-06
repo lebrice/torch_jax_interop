@@ -1375,23 +1375,19 @@ files = [
 
 [[package]]
 name = "tensor-regression"
-version = "0.0.2"
+version = "0.0.3"
 description = "A small wrapper around pytest_regressions for Tensors"
 optional = false
-python-versions = "^3.11"
-files = []
-develop = false
+python-versions = "<4.0,>=3.11"
+files = [
+    {file = "tensor_regression-0.0.3-py3-none-any.whl", hash = "sha256:52b1e7c87c30b348828a42b8a75d2a4c6a42bc146489370c7124bd4207e4166a"},
+    {file = "tensor_regression-0.0.3.tar.gz", hash = "sha256:5c21d84ff437dc70c10d8c0c20a3721f97ea6718081b0154c395a01364f7f724"},
+]
 
 [package.dependencies]
-numpy = "^1.26.4"
-pytest-regressions = "^2.5.0"
-torch = "^2.3.1"
-
-[package.source]
-type = "git"
-url = "https://www.github.com/lebrice/tensor_regression"
-reference = "HEAD"
-resolved_reference = "58b76fc935168b4c476f77ff7bea6f6394fe65b5"
+numpy = ">=1.26.4,<2.0.0"
+pytest-regressions = ">=2.5.0,<3.0.0"
+torch = ">=2.3.1,<3.0.0"
 
 [[package]]
 name = "tensorstore"
@@ -1560,4 +1556,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "e9c856598dcb771c528cc4c1e333235909c3b245b2ec4af51600275a30bc5be2"
+content-hash = "354624715c5e06fbac13feed7ecb19f4942831cec39cf77e0bf4bd36ea562710"

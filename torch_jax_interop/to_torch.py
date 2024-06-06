@@ -4,11 +4,14 @@ import collections.abc
 import dataclasses
 import functools
 import logging
+import operator
+import typing
 from logging import getLogger as get_logger
-from typing import Any, Callable, overload
+from typing import Any, Callable, Generic, TypeVar, overload
 
 import jax
 import torch
+from chex import PyTreeDef
 from jax.dlpack import to_dlpack as jax_to_dlpack  # type: ignore (not exported there?)
 from torch.utils import dlpack as torch_dlpack
 
@@ -141,3 +144,140 @@ def jax_to_torch_callable(jax_callable: Callable) -> Callable:
         return jax_to_torch(jax_outputs)
 
     return _wrapped
+
+
+Params = TypeVar("Params")
+
+
+class JaxModule(torch.nn.Module, Generic[Params]):
+    def __init__(
+        self,
+        jax_function: Callable[[Params, jax.Array], jax.Array],
+        jax_params: Params,
+    ):
+        super().__init__()
+        self.jax_function = jax.jit(jax_function)
+        params_list, self.params_treedef = jax.tree.flatten(jax_params)
+        # Register the parameters.
+        # Need to call .clone() when doing distributed training, otherwise we get a RuntimeError:
+        # Invalid device pointer when trying to share the CUDA memory.
+        # TODO: Only do this cloning when necessary (when in distributed training and on
+        # a per-tensor basis) instead of every time.
+        self.params = torch.nn.ParameterList(
+            map(operator.methodcaller("clone"), map(jax_to_torch, params_list))
+        )
+
+    def forward(self, input: torch.Tensor, /) -> torch.Tensor:
+        output = JaxFunction.apply(
+            input,
+            self.params_treedef,
+            self.jax_function,
+            *self.params,
+        )
+        assert isinstance(output, tuple) and len(output) == 2
+        out, _jvp_function = output
+        return out
+
+    if typing.TYPE_CHECKING:
+        __call__ = forward
+
+
+class JaxFunction(torch.autograd.Function, Generic[Params]):
+    """Wrapper for a jax function, making it usable in PyTorch's autograd system."""
+
+    @staticmethod
+    def forward(
+        input: torch.Tensor,
+        params_treedef: PyTreeDef,
+        jax_function: Callable[[Params, jax.Array], jax.Array],
+        *flat_params: torch.Tensor,  # need to flatten the params for autograd to understand that they need a gradient.
+    ):
+        from .to_jax import torch_to_jax
+
+        jax_input = torch_to_jax(input)
+        jax_params = jax.tree.unflatten(params_treedef, map(torch_to_jax, flat_params))
+        output, jvp_function = jax.vjp(jax_function, jax_params, jax_input)
+        output = jax_to_torch(output)
+        return output, jvp_function
+
+    # setup_context is responsible for calling methods and/or assigning to
+    # the ctx object. Please do not do additional compute (e.g. add
+    # Tensors together) in setup_context.
+    @staticmethod
+    def setup_context(
+        ctx: torch.autograd.function.BackwardCFunction, inputs: tuple, output: tuple
+    ):
+        input, params_treedef, jax_function, *params = inputs
+        output, jvp_function = output
+        ctx.jvp_function = jvp_function  # type: ignore   # saving for backward.
+
+    @staticmethod
+    def backward(
+        ctx: torch.autograd.function.NestedIOFunction,
+        grad_output: torch.Tensor,
+        _jvp_function_grad: None,
+    ):
+        from .to_jax import torch_to_jax
+
+        input_need_grad, _, _, *params_needs_grad = ctx.needs_input_grad
+        # todo: broaden this a bit in case we need the grad of the input.
+        # todo: Figure out how to do jax.grad for a function that outputs a matrix or vector.
+        assert not input_need_grad
+
+        grad_input = None
+        if input_need_grad or any(params_needs_grad):
+            assert all(params_needs_grad)  # assuming every parameter needs a gradient.
+            jvp_function = ctx.jvp_function  # type: ignore
+            jax_grad_output = torch_to_jax(grad_output)
+            jax_grad_params, jax_input_grad = jvp_function(jax_grad_output)
+            params_grads = jax.tree.map(jax_to_torch, jax.tree.leaves(jax_grad_params))
+
+            if input_need_grad:
+                grad_input = jax_to_torch(jax_input_grad)
+        else:
+            assert not any(params_needs_grad)
+            params_grads = tuple(None for _ in params_needs_grad)
+        return grad_input, None, None, *params_grads
+
+    @staticmethod
+    def jvp(
+        ctx,
+        input_grad: torch.Tensor,
+        params_treedef: PyTreeDef,
+        jax_function: Callable[[Params, jax.Array], jax.Array],
+        *params_grads: torch.Tensor,  # need to flatten the params for autograd to understand that they need a gradient.
+    ):
+        # todo: debug and test this further.
+        # https://pytorch.org/docs/stable/notes/extending.html#forward-mode-ad
+        # Called after `forward`
+        # Should return as many tensors as there were outputs.
+        from .to_jax import torch_to_jax
+
+        jax_params = jax.tree.unflatten(params_treedef, map(torch_to_jax, params_grads))
+        primals_out, tangents_out = jax.jvp(jax_function, jax_params, input_grad)
+        output_grads = jax.tree.map(jax_to_torch, tangents_out)
+        return output_grads
+
+    @staticmethod
+    def vmap(
+        info,
+        in_dims: tuple[int | None, ...],
+        input: torch.Tensor,
+        params_treedef: PyTreeDef,
+        jax_function: Callable[[Params, jax.Array], jax.Array],
+        *params: torch.Tensor,
+    ):
+        # todo: debug and test this further.
+        input_vmap_dim, _, _, *params_vmap_dims = in_dims
+
+        params_vmap_dims_dict = jax.tree.unflatten(params_treedef, params_vmap_dims)
+        # todo: use something like functools.cache so we can jit this?
+        vmapped_jax_function = jax.vmap(
+            jax_function, in_axes=(params_vmap_dims_dict, input_vmap_dim)
+        )
+        from .to_jax import torch_to_jax
+
+        jax_params = jax.tree.unflatten(params_treedef, map(torch_to_jax, params))
+        jax_input = torch_to_jax(input)
+        vmapped_result = vmapped_jax_function(jax_params, jax_input)
+        return vmapped_result

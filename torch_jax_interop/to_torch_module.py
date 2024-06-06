@@ -30,6 +30,7 @@ class JaxModule(torch.nn.Module, Generic[Params]):
         jax_function: flax.linen.Module | Callable[[Params, jax.Array], jax.Array],
         jax_params: Params,
         jit: bool = True,
+        clone_params: bool = False,
     ):
         super().__init__()
         if isinstance(jax_function, flax.linen.Module):
@@ -40,16 +41,16 @@ class JaxModule(torch.nn.Module, Generic[Params]):
             self.jax_function = jax.jit(self.jax_function)
 
         # Flatten the jax parameters so we can store them in a nn.ParameterList.
-        params_list, self.params_treedef = jax.tree.flatten(jax_params)
+        flat_params, self.params_treedef = jax.tree.flatten(jax_params)
         # Register the parameters.
         # Need to call .clone() when doing distributed training, otherwise we get a RuntimeError:
         # Invalid device pointer when trying to share the CUDA memory.
         # TODO: Only do this cloning when necessary (when in distributed training and on
         # a per-tensor basis) instead of every time.
-
-        self.params = torch.nn.ParameterList(
-            map(operator.methodcaller("clone"), map(jax_to_torch, params_list))
-        )
+        flat_params = map(jax_to_torch, flat_params)
+        if clone_params:
+            flat_params = map(operator.methodcaller("clone"), flat_params)
+        self.params = torch.nn.ParameterList(flat_params)
 
     def forward(self, input: torch.Tensor, /) -> torch.Tensor:
         # todo: check if we could somehow pass an arbitrary number of input arguments instead of just one.

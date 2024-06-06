@@ -104,7 +104,7 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
     def backward(
         ctx: torch.autograd.function.NestedIOFunction,
         grad_output: torch.Tensor,
-        _: None,
+        _not_used: None,
     ):
         from .to_jax import torch_to_jax
 

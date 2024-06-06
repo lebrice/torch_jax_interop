@@ -7,7 +7,7 @@ from flax.typing import VariableDict
 from tensor_regression import TensorRegressionFixture
 
 from torch_jax_interop import jax_to_torch, torch_to_jax
-from torch_jax_interop.to_torch import JaxModule
+from torch_jax_interop.to_torch_module import JaxModule
 from torch_jax_interop.utils import to_channels_last
 
 

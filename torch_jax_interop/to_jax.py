@@ -14,7 +14,7 @@ import jaxlib.xla_extension
 import pytorch2jax
 import torch
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
-from torch.utils.dlpack import to_dlpack as torch_to_dlpack
+from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 
 from .types import (
     Dataclass,

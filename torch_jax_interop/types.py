@@ -1,11 +1,16 @@
 import dataclasses
 from typing import Any, ClassVar, Mapping, Protocol, Sequence, TypeGuard, TypeVar
 
+import jax
+import torch
+
 K = TypeVar("K")
 V = TypeVar("V")
 
 NestedDict = dict[K, V | "NestedDict[K, V]"]
 NestedMapping = Mapping[K, V | "NestedMapping[K, V]"]
+
+T = TypeVar("T", jax.Array, torch.Tensor)
 
 
 # NOTE: Not using a `runtime_checkable` version of the `Dataclass` protocol here, because it

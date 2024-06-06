@@ -9,6 +9,7 @@ import typing
 from logging import getLogger as get_logger
 from typing import Any, Callable, Generic, TypeVar, overload
 
+import flax.linen
 import jax
 import torch
 from chex import PyTreeDef
@@ -150,13 +151,25 @@ Params = TypeVar("Params")
 
 
 class JaxModule(torch.nn.Module, Generic[Params]):
+    """nn.Module that wraps a jax function (including `flax.linen.Module`s).
+
+    This should be passed a function that accepts two arguments: parameters and an
+    input.
+    """
+
     def __init__(
         self,
-        jax_function: Callable[[Params, jax.Array], jax.Array],
+        jax_function: flax.linen.Module | Callable[[Params, jax.Array], jax.Array],
         jax_params: Params,
+        jit: bool = True,
     ):
         super().__init__()
-        self.jax_function = jax.jit(jax_function)
+        if isinstance(jax_function, flax.linen.Module):
+            jax_function = jax_function.apply
+
+        self.jax_function = jax_function
+        if jit:
+            self.jax_function = jax.jit(self.jax_function)
         params_list, self.params_treedef = jax.tree.flatten(jax_params)
         # Register the parameters.
         # Need to call .clone() when doing distributed training, otherwise we get a RuntimeError:
@@ -168,6 +181,7 @@ class JaxModule(torch.nn.Module, Generic[Params]):
         )
 
     def forward(self, input: torch.Tensor, /) -> torch.Tensor:
+        # todo: check if we could somehow pass an arbitrary number of input arguments instead of just one.
         output = JaxFunction.apply(
             input,
             self.params_treedef,
@@ -220,24 +234,26 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
         from .to_jax import torch_to_jax
 
         input_need_grad, _, _, *params_needs_grad = ctx.needs_input_grad
-        # todo: broaden this a bit in case we need the grad of the input.
-        # todo: Figure out how to do jax.grad for a function that outputs a matrix or vector.
-        assert not input_need_grad
 
         grad_input = None
+        flat_params_grads = tuple(None for _ in params_needs_grad)
         if input_need_grad or any(params_needs_grad):
             assert all(params_needs_grad)  # assuming every parameter needs a gradient.
             jvp_function = ctx.jvp_function  # type: ignore
             jax_grad_output = torch_to_jax(grad_output)
             jax_grad_params, jax_input_grad = jvp_function(jax_grad_output)
-            params_grads = jax.tree.map(jax_to_torch, jax.tree.leaves(jax_grad_params))
-
+            flat_params_grads = jax.tree.map(
+                jax_to_torch, jax.tree.leaves(jax_grad_params)
+            )
+            # Only give out the gradients if they were requested.
             if input_need_grad:
                 grad_input = jax_to_torch(jax_input_grad)
-        else:
-            assert not any(params_needs_grad)
-            params_grads = tuple(None for _ in params_needs_grad)
-        return grad_input, None, None, *params_grads
+            flat_params_grads = tuple(
+                flat_param_grad if params_needs_grad[i] else None
+                for i, flat_param_grad in enumerate(flat_params_grads)
+            )
+
+        return grad_input, None, None, *flat_params_grads
 
     @staticmethod
     def jvp(
@@ -253,6 +269,11 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
         # Should return as many tensors as there were outputs.
         from .to_jax import torch_to_jax
 
+        log_once(
+            logger,
+            message="This is untested! Use at your own risk!",
+            level=logging.WARNING,
+        )
         jax_params = jax.tree.unflatten(params_treedef, map(torch_to_jax, params_grads))
         primals_out, tangents_out = jax.jvp(jax_function, jax_params, input_grad)
         output_grads = jax.tree.map(jax_to_torch, tangents_out)
@@ -267,6 +288,11 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
         jax_function: Callable[[Params, jax.Array], jax.Array],
         *params: torch.Tensor,
     ):
+        log_once(
+            logger,
+            message="This is untested! Use at your own risk!",
+            level=logging.WARNING,
+        )
         # todo: debug and test this further.
         input_vmap_dim, _, _, *params_vmap_dims = in_dims
 

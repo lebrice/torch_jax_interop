@@ -9,10 +9,12 @@ from typing import Any, Callable, overload
 
 import functorch
 import jax
+import jaxlib
+import jaxlib.xla_extension
 import pytorch2jax
 import torch
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
-from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
+from torch.utils.dlpack import to_dlpack as torch_to_dlpack
 
 from .types import (
     Dataclass,
@@ -22,7 +24,9 @@ from .types import (
     NestedMapping,
     is_sequence_of,
 )
-from .utils import log_once
+from .utils import (
+    log_once,
+)
 
 logger = get_logger(__name__)
 
@@ -88,11 +92,28 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
     """Converts a PyTorch Tensor into a jax.Array.
 
     NOTE: seems like torch.float64 tensors are implicitly converted to jax.float32 tensors?
+
+    TODOs:
+    - [ ] Try to fix some of the issues related to the dimension layout (channels_first vs channels_last?)
     """
-    if not value.is_contiguous():
-        value = value.contiguous()
-    dlpack = torch_to_dlpack(value)
-    array = jax_from_dlpack(dlpack, copy=False)
+    value = value.detach()
+    try:
+        dlpack = torch_to_dlpack(value)
+        return jax_from_dlpack(dlpack, copy=False)
+    except jaxlib.xla_extension.XlaRuntimeError as err:
+        log_once(
+            logger,
+            message=(
+                f"Unable to converting tensor of shape {value.shape} to jax.Array in-place: {err} "
+                f"Will attempt to convert a flattened view of this tensor instead."
+            ),
+            level=logging.ERROR,
+        )
+
+    flattened_value = value.flatten()
+    dlpack = torch_to_dlpack(flattened_value)
+    array: jax.Array = jax_from_dlpack(dlpack, copy=False)
+    array = array.reshape(value.shape)
     return array
 
 

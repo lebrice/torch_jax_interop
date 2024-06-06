@@ -1,20 +1,14 @@
-import torch
-import pytest
 import jax
 import jax.numpy as jnp
+import pytest
+import torch
+
+from torch_jax_interop.to_torch import jax_to_torch_device
 
 
 @pytest.fixture(scope="session", params=[123], ids="seed={}".format)
 def seed(request: pytest.FixtureRequest) -> int:
     return request.param
-
-
-@pytest.fixture(scope="session", params=["cpu", "cuda"])
-def torch_device(request: pytest.FixtureRequest):
-    device_str = request.param
-    if "cuda" in device_str and not torch.cuda.is_available():
-        pytest.skip("Needs a GPU to run but cuda isn't available.")
-    return torch.device(device_str)
 
 
 @pytest.fixture(
@@ -29,6 +23,18 @@ def jax_device(request: pytest.FixtureRequest) -> jax.Device:
     if not devices:
         pytest.skip(f"No devices found for backend {backend_str}.")
     return devices[0]
+
+
+@pytest.fixture(scope="session")
+def torch_device(
+    request: pytest.FixtureRequest, jax_device: jax.Device
+) -> torch.device:
+    param = getattr(request, "param", None)
+    # in case of an indirect parametrization, use the specified device:
+    if param is not None:
+        assert isinstance(param, str | torch.device)
+        return torch.device(param) if isinstance(param, str) else param
+    return jax_to_torch_device(jax_device)
 
 
 @pytest.fixture(

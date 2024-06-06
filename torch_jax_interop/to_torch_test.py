@@ -4,7 +4,6 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 import jax.test_util
-import jaxlib.xla_extension
 import numpy
 import pytest
 import torch
@@ -21,13 +20,9 @@ from torch_jax_interop import jax_to_torch, torch_to_jax
         (10, 10, 10),
         pytest.param(
             tuple(range(1, 6)),
-            marks=pytest.mark.xfail(
-                raises=jaxlib.xla_extension.XlaRuntimeError,
-                reason="TODO: Getting a UNIMPLEMENTED due to non-default layout?",
-            ),
         ),
     ],
-    ids="shape={}".format,
+    ids=repr,
 )
 def test_jax_to_torch_tensor(
     shape: tuple[int, ...],

@@ -10,30 +10,29 @@ from pytest_benchmark.fixture import BenchmarkFixture
 
 from torch_jax_interop import jax_to_torch, torch_to_jax
 from torch_jax_interop.to_jax import torch_to_jax_nn_module
+from torch_jax_interop.utils import log_once
 
 
 @pytest.mark.parametrize(
-    "shape",
+    ("shape", "might_warn"),
     [
-        (1,),
-        (10, 10),
-        (100, 100, 100),
-        pytest.param(
-            tuple(range(1, 6)),
-            marks=pytest.mark.xfail(
-                reason="TODO: Getting a UNIMPLEMENTED due to non-default layout?"
-            ),
-        ),
+        ((1,), False),
+        ((10, 10), False),
+        ((100, 100, 100), False),
+        (tuple(range(1, 6)), True),
+        ((1, 3, 32, 32), True),
     ],
     ids="shape={}".format,
 )
 def test_torch_to_jax_tensor(
     torch_device: torch.device,
     shape: tuple[int, ...],
+    might_warn: bool,
     torch_dtype: torch.dtype,
     jax_dtype: jax.numpy.dtype,
     seed: int,
     benchmark: BenchmarkFixture,
+    caplog: pytest.LogCaptureFixture,
 ):
     if numpy.prod(shape) >= 1_000_000 and torch_device.type == "cpu":
         pytest.skip("Skipping test with large tensor on CPU.")
@@ -54,7 +53,11 @@ def test_torch_to_jax_tensor(
         )
     assert torch_value.shape == shape
 
-    jax_value = benchmark(torch_to_jax, torch_value)
+    log_once.cache_clear()
+    with caplog.at_level(logging.WARNING):
+        jax_value = benchmark(torch_to_jax, torch_value)
+    if not might_warn:
+        assert not caplog.records
     assert isinstance(jax_value, jax.Array)
     assert jax_value.dtype == jax_dtype
 

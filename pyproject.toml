@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "torch-jax-interop"
-version = "0.0.3"
+version = "0.0.3.post2.dev0+754b64f"
 description = "Utility to convert Tensors from Jax to Torch and vice-versa"
 authors = ["Fabrice Normandin <normandf@mila.quebec>"]
 license = "MIT"

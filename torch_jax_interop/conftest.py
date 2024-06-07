@@ -96,6 +96,7 @@ class JaxCNN(flax.linen.Module):
 
     @flax.linen.compact
     def __call__(self, x: jax.Array):
+        x = to_channels_last(x)
         x = flax.linen.Conv(features=32, kernel_size=(3, 3))(x)
         x = flax.linen.relu(x)
         x = flax.linen.avg_pool(x, window_shape=(2, 2), strides=(2, 2))

@@ -108,8 +108,10 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
         log_once(
             logger,
             message=(
-                f"Unable to view tensor of shape {value.shape} as a jax.Array in-place: {err} "
-                f"Tensors of this shape will be flattened and unflattened (which may or may not require making a copy)."
+                f"Unable to view tensor of shape {tuple(value.shape)} as a jax.Array in-place:\n"
+                f"'{err}'\n"
+                f"Tensors of this shape will be flattened and unflattened (which may or "
+                f"may not involve making a copy of the tensor's data)."
             ),
             level=logging.WARNING,
         )

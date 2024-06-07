@@ -6,7 +6,7 @@ import dataclasses
 import functools
 import logging
 from logging import getLogger as get_logger
-from typing import Any, Callable, Iterable, overload
+from typing import Any, Callable, Concatenate, Iterable, overload
 
 import jax
 import jaxlib
@@ -21,8 +21,11 @@ from .types import (
     Dataclass,
     DataclassType,
     K,
+    Module,
     NestedDict,
     NestedMapping,
+    Out_cov,
+    P,
     is_sequence_of,
 )
 from .utils import (
@@ -198,25 +201,33 @@ def torch_to_jax_nn_module(
 torch_to_jax.register(torch.nn.Module, torch_to_jax_nn_module)
 
 
-def make_functional(mod: torch.nn.Module, disable_autograd_tracking=False):
-    """Adapter for functorch.make_functional taken from
-    https://gist.github.com/zou3519/7769506acc899d83ef1464e28f22e6cf as directed to by
-    https://pytorch.org/docs/master/func.migrating.html#functorch-make-functional."""
-    params_dict = dict(mod.named_parameters())
-    params_names = params_dict.keys()
+def make_functional(
+    module_with_state: Module[P, Out_cov], disable_autograd_tracking=False
+) -> tuple[
+    Callable[Concatenate[Iterable[torch.Tensor], P], Out_cov], tuple[torch.Tensor, ...]
+]:
+    """Backward compatibility equivalent for `functorch.make_functional` in the new
+    torch.func API.
+
+    Adapted from https://gist.github.com/zou3519/7769506acc899d83ef1464e28f22e6cf as
+    suggested by https://pytorch.org/docs/master/func.migrating.html#functorch-make-
+    functional
+    """
+    params_dict = dict(module_with_state.named_parameters())
+    param_names = params_dict.keys()
     params_values = tuple(params_dict.values())
-
-    stateless_mod = copy.deepcopy(mod)
-    stateless_mod.to("meta")
-
-    def fmodel(new_params_values: Iterable[torch.Tensor], *args, **kwargs):
-        new_params_dict = {
-            name: value for name, value in zip(params_names, new_params_values)
-        }
-        return torch.func.functional_call(stateless_mod, new_params_dict, args, kwargs)  # type: ignore
-
     if disable_autograd_tracking:
         params_values = tuple(map(torch.Tensor.detach, params_values))
+
+    stateless_mod = copy.deepcopy(module_with_state)
+    stateless_mod.to(device="meta")
+
+    def fmodel(parameters: Iterable[torch.Tensor], *args: P.args, **kwargs: P.kwargs):
+        parameters = tuple(parameters)
+        assert len(parameters) == len(param_names)
+        params_dict = dict(zip(param_names, parameters))
+        return torch.func.functional_call(stateless_mod, params_dict, args, kwargs)  # type: ignore
+
     return fmodel, params_values
 
 

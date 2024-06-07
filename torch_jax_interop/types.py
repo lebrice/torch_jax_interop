@@ -1,5 +1,16 @@
 import dataclasses
-from typing import Any, ClassVar, Mapping, Protocol, Sequence, TypeGuard, TypeVar
+import typing
+from typing import (
+    Any,
+    ClassVar,
+    Mapping,
+    ParamSpec,
+    Protocol,
+    Sequence,
+    TypeGuard,
+    TypeVar,
+    runtime_checkable,
+)
 
 import jax
 import torch
@@ -11,6 +22,36 @@ NestedDict = dict[K, V | "NestedDict[K, V]"]
 NestedMapping = Mapping[K, V | "NestedMapping[K, V]"]
 
 T = TypeVar("T", jax.Array, torch.Tensor)
+
+
+P = ParamSpec("P")
+Out_cov = TypeVar("Out_cov", covariant=True)
+
+
+@runtime_checkable
+class Module(Protocol[P, Out_cov]):
+    """Procotol for a torch.nn.Module that gives better type hints for the `__call__`
+    method."""
+
+    def forward(self, *args: P.args, **kwargs: P.kwargs) -> Out_cov:
+        raise NotImplementedError
+
+    if typing.TYPE_CHECKING:
+        # note: Only define this for typing purposes so that we don't actually override anything.
+        def __call__(self, *args: P.args, **kwagrs: P.kwargs) -> Out_cov:
+            ...
+
+        modules = torch.nn.Module.modules
+        named_modules = torch.nn.Module.named_modules
+        state_dict = torch.nn.Module.state_dict
+        zero_grad = torch.nn.Module.zero_grad
+        parameters = torch.nn.Module.parameters
+        named_parameters = torch.nn.Module.named_parameters
+        cuda = torch.nn.Module.cuda
+        cpu = torch.nn.Module.cpu
+        # note: the overloads on nn.Module.to cause a bug with missing `self`.
+        # This shouldn't be a problem.
+        to = torch.nn.Module().to
 
 
 # NOTE: Not using a `runtime_checkable` version of the `Dataclass` protocol here, because it

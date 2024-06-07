@@ -1,16 +1,19 @@
 import logging
+import operator
 from typing import Any
 
 import jax
 import jax.numpy as jnp
 import numpy
+import optax
 import pytest
 import torch
 from pytest_benchmark.fixture import BenchmarkFixture
+from tensor_regression import TensorRegressionFixture
 
 from torch_jax_interop import jax_to_torch, torch_to_jax
 from torch_jax_interop.to_jax import torch_to_jax_nn_module
-from torch_jax_interop.utils import log_once
+from torch_jax_interop.utils import log_once, to_channels_first
 
 
 @pytest.mark.parametrize(
@@ -165,3 +168,77 @@ def test_log_once_on_unsupported_value(
     with caplog.at_level(logging.DEBUG):
         assert torch_to_jax(unsupported_value) is unsupported_value
     assert len(caplog.records) == 0
+
+
+def test_use_torch_module_in_jax_graph(
+    torch_network: torch.nn.Module,
+    jax_input: jax.Array,
+    tensor_regression: TensorRegressionFixture,
+    num_classes: int,
+    seed: int,
+):
+    torch_parameters = {name: p for name, p in torch_network.named_parameters()}
+    # todo: check that only trainable parameters have a gradient?
+    _is_trainable = {name: p.requires_grad for name, p in torch_parameters.items()}
+    _num_parameters = len(torch_parameters)
+    _total_num_parameters = sum(
+        map(
+            operator.methodcaller("numel"),
+            filter(operator.attrgetter("requires_grad"), torch_parameters.values()),
+        )
+    )
+    flat_torch_params, params_treedef = jax.tree.flatten(torch_parameters)
+
+    wrapped_torch_network_fn, jax_params = torch_to_jax_nn_module(torch_network)
+
+    assert callable(wrapped_torch_network_fn)
+    assert isinstance(jax_params, tuple) and all(
+        isinstance(p, jax.Array) for p in jax_params
+    )
+    assert len(jax_params) == len(flat_torch_params)
+    # TODO: Why would the ordering change?!
+    jax_param_shapes = sorted([p.shape for p in jax_params])
+    torch_param_shapes = sorted([p.shape for p in flat_torch_params])
+    assert jax_param_shapes == torch_param_shapes
+
+    # BUG: values are different? Is it only due to the dtype?
+    assert all(
+        numpy.testing.assert_allclose(jax_p, torch_to_jax(torch_p))
+        for jax_p, torch_p in zip(jax_params, flat_torch_params)
+    )
+
+    batch_size = jax_input.shape[0]
+    labels = jax.random.randint(
+        key=jax.random.key(seed),
+        minval=0,
+        maxval=num_classes,
+        shape=(batch_size,),
+    )
+
+    def loss_fn(
+        params: tuple[jax.Array, ...], x: jax.Array, y: jax.Array
+    ) -> tuple[jax.Array, jax.Array]:
+        x = to_channels_first(x)
+        logits = wrapped_torch_network_fn(params, x)
+        one_hot = jax.nn.one_hot(y, logits.shape[-1])
+        loss = jnp.mean(optax.softmax_cross_entropy(logits=logits, labels=one_hot))
+        return loss, logits
+
+    # TODO: Unfortunately can't use `.jit` here.. Perhaps there's a way to make only that part stay un-jitted somehow?
+    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+
+    (loss, logits), param_grads = grad_fn(jax_params, jax_input, labels)
+    assert len(param_grads) == len(jax_params)
+
+    grads_dict = jax.tree.unflatten(params_treedef, param_grads)
+
+    tensor_regression.check(
+        {
+            "input": input,
+            "output": logits,
+            "loss": loss,
+            "input_grad": input.grad,
+        }
+        | {name: p for name, p in grads_dict.items()},
+        include_gpu_name_in_stats=False,
+    )

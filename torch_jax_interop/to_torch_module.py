@@ -63,7 +63,6 @@ class JaxModule(torch.nn.Module, Generic[Params]):
         assert isinstance(outputs, tuple) and len(outputs) == 2
         output, _jvp_fn = outputs
         assert isinstance(output, torch.Tensor)
-        assert output.requires_grad == input.requires_grad
         return output
 
     if typing.TYPE_CHECKING:

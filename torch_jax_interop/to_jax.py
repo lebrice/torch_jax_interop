@@ -9,6 +9,7 @@ from logging import getLogger as get_logger
 from typing import Any, Callable, Concatenate, Iterable, overload
 
 import jax
+import jax.core
 import jaxlib
 import jaxlib.xla_extension
 import torch
@@ -26,7 +27,9 @@ from .types import (
     NestedMapping,
     Out_cov,
     P,
+    PyTree,
     is_sequence_of,
+    tree_map,
 )
 from .utils import (
     log_once,
@@ -189,12 +192,18 @@ def torch_to_jax_callable(torch_callable: Callable) -> Callable:
 
 
 def torch_to_jax_nn_module(
-    model: torch.nn.Module,
+    model: torch.nn.Module, example_output: Any = None
 ) -> tuple[jax.custom_vjp[Any], tuple[jax.Array, ...]]:
     # Convert a Pytorch model to a jax function and parameters
     # NOTE: Using our version below to avoid warnings and to play around with it a bit.
     # jax_fn, jax_params = pytorch2jax.convert_pytnn_to_jax(model)
-    jax_fn, jax_params = _convert_pytorch_module_to_jax(model)
+    if example_output is not None:
+        example_out = jax.tree.map(torch_to_jax, example_output)
+    else:
+        example_out = None
+    jax_fn, jax_params = _convert_pytorch_module_to_jax(
+        model, example_output=example_out
+    )
     assert is_sequence_of(jax_params, jax.Array)
     assert isinstance(jax_params, tuple)
     return jax_fn, jax_params
@@ -226,51 +235,139 @@ def make_functional(
 
     def fmodel(parameters: Iterable[torch.Tensor], *args: P.args, **kwargs: P.kwargs):
         parameters = tuple(parameters)
-        assert len(parameters) == len(param_names)
+        assert len(parameters) == len(param_names), (len(parameters), len(param_names))
         params_dict = dict(zip(param_names, parameters))
         return torch.func.functional_call(stateless_mod, params_dict, args, kwargs)  # type: ignore
 
     return fmodel, params_values
 
 
-def _convert_pytorch_module_to_jax(model: torch.nn.Module):
-    # Copied and adapted from https://github.com/subho406/pytorch2jax/blob/main/pytorch2jax/pytorch2jax.py#L32
+def _convert_pytorch_module_to_jax(
+    model: torch.nn.Module,
+    example_output: torch.Tensor
+    | jax.ShapeDtypeStruct
+    | PyTree[torch.Tensor]
+    | PyTree[jax.ShapeDtypeStruct]
+    | None = None,
+):
+    """Wrap a pytorch model to be used in a jax computation.
+
+    Copied and adapted from https://github.com/subho406/pytorch2jax/blob/main/pytorch2jax/pytorch2jax.py#L32
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        A Torch module.
+    example_output : torch.Tensor | None, optional
+        Example of an output of the model, used to specify the expected shapes and
+        dtypes so that this computation can be jitted.
+
+    Returns
+    -------
+    the functional model and the model parameters (converted to jax arrays).
+    """
     from .to_torch import jax_to_torch
+
+    def j2t(v: PyTree[jax.Array]) -> PyTree[torch.Tensor]:
+        if any(isinstance(v_i, jax.core.Tracer) for v_i in jax.tree.leaves(v)):
+            # running inside JIT.
+            return jax.pure_callback(
+                functools.partial(jax.tree.map, jax_to_torch), v, v, vectorized=True
+            )
+        return jax.tree.map(jax_to_torch, v)
+
+    def t2j(v: PyTree[torch.Tensor]) -> PyTree[jax.Array]:
+        if any(isinstance(v_i, jax.core.Tracer) for v_i in jax.tree.leaves(v)):
+            # running inside JIT.
+            return jax.pure_callback(
+                functools.partial(jax.tree.map, torch_to_jax), v, v, vectorized=True
+            )
+        return jax.tree.map(torch_to_jax, v)
 
     # Convert the PyTorch model to a functional representation and extract the model function and parameters
     model_fn, model_params = make_functional(model)  # type: ignore
 
     # Convert the model parameters from PyTorch to JAX representations
-    jax_model_params: tuple[jax.Array, ...] = jax.tree.map(torch_to_jax, model_params)
+    jax_model_params: tuple[jax.Array, ...] = tuple(map(torch_to_jax, model_params))
 
     # Define the apply function using a custom VJP
     @jax.custom_vjp
     def apply(params, *args, **kwargs):
         # Convert the input data from PyTorch to JAX representations
-        params = jax.tree.map(jax_to_torch, params)
-        args = jax.tree.map(jax_to_torch, args)
-        kwargs = jax.tree.map(jax_to_torch, kwargs)
-        # Apply the model function to the input data
-        out = model_fn(params, *args, **kwargs)
+        # Apply the model function to the input data.
+        if example_output is None:
+            if any(isinstance(v, jax.core.Tracer) for v in jax.tree.leaves(params)):
+                raise RuntimeError(
+                    "You need to pass `example_output` in order to JIT the function!"
+                )
+            params = j2t(params)
+            args = j2t(args)
+            kwargs = j2t(kwargs)
+            out = model_fn(params, *args, **kwargs)
+        else:
+            result_shape_dtypes = t2j(example_output)
+
+            def fn(params, *args, **kwargs):
+                params = jax.tree.map(jax_to_torch, params)
+                args = jax.tree.map(jax_to_torch, args)
+                kwargs = jax.tree.map(jax_to_torch, kwargs)
+                out = model_fn(params, *args, **kwargs)
+                return jax.tree.map(torch_to_jax, out)
+
+            # Pass the jax params to the model function in this case, because
+            # jax.pure_callback tries to extract the dtypes of the args.
+            # TODO: Check that this doesn't put the jax arrays on CPU though!
+            out = jax.pure_callback(
+                fn, result_shape_dtypes, params, *args, **kwargs, vectorized=True
+            )
         # Convert the output data from JAX to PyTorch representations
-        out = jax.tree.map(torch_to_jax, out)
+        out = t2j(out)
         return out
 
     # Define the forward and backward passes for the VJP
     def apply_fwd(params, *args, **kwargs):
         return apply(params, *args, **kwargs), (params, args, kwargs)
 
-    def apply_bwd(res, grads):
+    def apply_bwd(res, grads: jax.Array):
         params, args, kwargs = res
         # Convert the input data and gradients from PyTorch to JAX representations
-        params = jax.tree.map(jax_to_torch, params)
-        args = jax.tree.map(jax_to_torch, args)
-        kwargs = jax.tree.map(jax_to_torch, kwargs)
-        grads = jax.tree.map(jax_to_torch, grads)
-        # Compute the gradients using the model function and convert them from JAX to PyTorch representations
-        grads = torch.func.vjp(model_fn, params, *args, **kwargs)[1](grads)
-        grads = jax.tree.map(torch_to_jax, grads)
-        return grads
+
+        if isinstance(grads, jax.core.Tracer):
+            # Compute the gradients using the model function and convert them from JAX to PyTorch representations
+            def _back(params, grads, *args, **kwargs):
+                torch_params = tree_map(jax_to_torch, params)
+                torch_args = tree_map(jax_to_torch, args)
+                torch_kwargs = tree_map(jax_to_torch, kwargs)
+                torch_grads = tree_map(jax_to_torch, grads)
+                _torch_out, torch_jvp_fn = torch.func.vjp(
+                    model_fn, torch_params, *torch_args, **torch_kwargs
+                )
+                torch_in_grads = torch_jvp_fn(torch_grads)
+                return torch_in_grads
+
+            # TODO: which one of `params, args or kwargs is the 'input'?
+            result_shape_dtypes = (params, args[0])
+            in_grads = jax.pure_callback(
+                _back,
+                result_shape_dtypes,
+                params,
+                grads,
+                *args,
+                **kwargs,
+                vectorized=True,
+            )
+            in_grads = t2j(in_grads)
+        else:
+            torch_params = jax.tree.map(jax_to_torch, params)
+            torch_args = jax.tree.map(jax_to_torch, args)
+            torch_kwargs = jax.tree.map(jax_to_torch, kwargs)
+            torch_grads = jax.tree.map(jax_to_torch, grads)
+            _torch_out, torch_jvp_fn = torch.func.vjp(
+                model_fn, torch_params, *torch_args, **torch_kwargs
+            )
+            torch_in_grads = torch_jvp_fn(torch_grads)
+            in_grads = jax.tree.map(torch_to_jax, torch_in_grads)
+        return in_grads
 
     apply.defvjp(apply_fwd, apply_bwd)
 

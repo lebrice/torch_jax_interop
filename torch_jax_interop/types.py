@@ -2,7 +2,9 @@ import dataclasses
 import typing
 from typing import (
     Any,
+    Callable,
     ClassVar,
+    Concatenate,
     Mapping,
     ParamSpec,
     Protocol,
@@ -17,9 +19,21 @@ import torch
 
 K = TypeVar("K")
 V = TypeVar("V")
+C = TypeVar("C", bound=Callable)
+Out = TypeVar("Out")
+P = ParamSpec("P")
 
 NestedDict = dict[K, V | "NestedDict[K, V]"]
 NestedMapping = Mapping[K, V | "NestedMapping[K, V]"]
+
+T = TypeVar("T")
+PyTree = T | tuple["PyTree[T]", ...] | list["PyTree[T]"] | dict[Any, "PyTree[T]"]
+
+
+def tree_map(f: Callable[[T], Out], tree: PyTree[T]) -> PyTree[Out]:
+    """Maps a function over a PyTree."""
+    return jax.tree.map(f, tree)
+
 
 T = TypeVar("T", jax.Array, torch.Tensor)
 
@@ -100,14 +114,14 @@ def is_sequence_of(
         return False
 
 
-# def jit[C: Callable, **P](
-#     c: C,
-#     _fn: Callable[Concatenate[C, P], Any] = jax.jit,
-#     *args: P.args,
-#     **kwargs: P.kwargs,
-# ) -> C:
-#     # Fix `jax.jit` so it preserves the jit-ed function's signature and docstring.
-#     return _fn(c, *args, **kwargs)
+def jit(
+    c: C,
+    _fn: Callable[Concatenate[C, P], Any] = jax.jit,
+    *args: P.args,
+    **kwargs: P.kwargs,
+) -> C:
+    # Fix `jax.jit` so it preserves the jit-ed function's signature and docstring.
+    return _fn(c, *args, **kwargs)
 
 
 # def chexify[C: Callable, **P](

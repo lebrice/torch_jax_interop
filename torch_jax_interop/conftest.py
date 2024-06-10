@@ -72,7 +72,7 @@ def jax_dtype(torch_jax_dtypes: tuple[torch.dtype, jnp.dtype]) -> jnp.dtype:
 
 @pytest.fixture
 def jax_input(torch_input: torch.Tensor):
-    return to_channels_last(torch_to_jax(torch_input))
+    return torch_to_jax(torch_input)
 
 
 @pytest.fixture
@@ -104,7 +104,7 @@ class JaxCNN(flax.linen.Module):
         x = flax.linen.relu(x)
         x = flax.linen.avg_pool(x, window_shape=(2, 2), strides=(2, 2))
 
-        x = x.reshape((x.shape[0], -1))  # flatten
+        x = flatten(x)
         x = flax.linen.Dense(features=256)(x)
         x = flax.linen.relu(x)
         x = flax.linen.Dense(features=self.num_classes)(x)
@@ -127,12 +127,16 @@ class TorchCNN(torch.nn.Sequential):
         )
 
 
+def flatten(x: jax.Array) -> jax.Array:
+    return x.reshape((x.shape[0], -1))
+
+
 class JaxFcNet(flax.linen.Module):
     num_classes: int = 10
 
     @flax.linen.compact
     def __call__(self, x: jax.Array):
-        x = x.reshape((x.shape[0], -1))  # flatten
+        x = flatten(x)
         x = flax.linen.Dense(features=256)(x)
         x = flax.linen.relu(x)
         x = flax.linen.Dense(features=self.num_classes)(x)

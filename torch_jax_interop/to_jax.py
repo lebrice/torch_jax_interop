@@ -192,7 +192,7 @@ def torch_to_jax_callable(torch_callable: Callable) -> Callable:
 
 
 def torch_to_jax_nn_module(
-    model: torch.nn.Module, example_output: Any = None
+    model: torch.nn.Module, example_output: torch.Tensor | None = None
 ) -> tuple[jax.custom_vjp[Any], tuple[jax.Array, ...]]:
     # Convert a Pytorch model to a jax function and parameters
     # NOTE: Using our version below to avoid warnings and to play around with it a bit.

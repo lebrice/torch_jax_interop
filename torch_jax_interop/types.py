@@ -5,6 +5,7 @@ from typing import (
     Callable,
     ClassVar,
     Concatenate,
+    Literal,
     Mapping,
     ParamSpec,
     Protocol,
@@ -115,13 +116,24 @@ def is_sequence_of(
 
 
 def jit(
-    c: C,
-    _fn: Callable[Concatenate[C, P], Any] = jax.jit,
-    *args: P.args,
-    **kwargs: P.kwargs,
-) -> C:
-    # Fix `jax.jit` so it preserves the jit-ed function's signature and docstring.
-    return _fn(c, *args, **kwargs)
+    fn: Callable[P, Out],
+) -> Callable[P, Out]:
+    """Small type hint fix for jax's `jit` (preserves the signature of the callable)."""
+    return jax.jit(fn)  # type: ignore
+
+
+In = TypeVar("In")
+Aux = TypeVar("Aux")
+
+
+def value_and_grad(
+    fn: Callable[Concatenate[In, P], tuple[Out, Aux]],
+    argnums: Literal[0] = 0,
+    has_aux: Literal[True] = True,
+) -> Callable[Concatenate[In, P], tuple[tuple[Out, Aux], In]]:
+    """Small type hint fix for jax's `value_and_grad` (preserves the signature of the
+    callable)."""
+    return jax.value_and_grad(fn, argnums=argnums, has_aux=has_aux)  # type: ignore
 
 
 # def chexify[C: Callable, **P](

@@ -13,6 +13,8 @@ from tensor_regression import TensorRegressionFixture
 
 from torch_jax_interop import jax_to_torch, torch_to_jax
 from torch_jax_interop.to_jax import torch_to_jax_nn_module
+from torch_jax_interop.to_torch import jax_to_torch_device
+from torch_jax_interop.types import jit, value_and_grad
 from torch_jax_interop.utils import log_once, to_channels_first
 
 
@@ -170,14 +172,15 @@ def test_log_once_on_unsupported_value(
     assert len(caplog.records) == 0
 
 
-@pytest.mark.parametrize("jit", [False, True])
+@pytest.mark.parametrize("with_jit", [False, True])
 def test_use_torch_module_in_jax_graph(
     torch_network: torch.nn.Module,
     jax_input: jax.Array,
     tensor_regression: TensorRegressionFixture,
     num_classes: int,
     seed: int,
-    jit: bool,
+    with_jit: bool,
+    torch_device: torch.device,
 ):
     torch_parameters = {name: p for name, p in torch_network.named_parameters()}
     # todo: check that only trainable parameters have a gradient?
@@ -235,16 +238,29 @@ def test_use_torch_module_in_jax_graph(
         return loss, logits
 
     # TODO: Unfortunately can't use `.jit` here.. Perhaps there's a way to make only that part stay un-jitted somehow?
-    grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+    grad_fn = value_and_grad(loss_fn, has_aux=True)
 
-    if jit:
-        grad_fn = jax.jit(grad_fn)
+    if with_jit:
+        grad_fn = jit(grad_fn)
 
     (loss, logits), param_grads = grad_fn(jax_params, jax_input, labels)
     assert len(param_grads) == len(jax_params)
 
-    grads_dict = jax.tree.unflatten(params_treedef, param_grads)
+    def _get_device(v: jax.Array) -> torch.device:
+        assert len(v.devices()) == 1
+        jax_device = v.devices().pop()
+        return jax_to_torch_device(jax_device)
 
+    assert _get_device(loss) == torch_device
+    assert _get_device(logits) == torch_device
+    assert len(param_grads) == len(jax_params)
+    for param, grad in zip(jax_params, param_grads):
+        assert param.shape == grad.shape
+        assert param.dtype == grad.dtype
+        assert _get_device(param) == torch_device
+        assert _get_device(grad) == torch_device
+
+    grads_dict = jax.tree.unflatten(params_treedef, param_grads)
     tensor_regression.check(
         {
             "input": jax_input,

@@ -29,7 +29,6 @@ from .types import (
     P,
     PyTree,
     is_sequence_of,
-    tree_map,
 )
 from .utils import (
     log_once,
@@ -243,12 +242,8 @@ def make_functional(
 
 
 def _convert_pytorch_module_to_jax(
-    model: torch.nn.Module,
-    example_output: torch.Tensor
-    | jax.ShapeDtypeStruct
-    | PyTree[torch.Tensor]
-    | PyTree[jax.ShapeDtypeStruct]
-    | None = None,
+    model: Module[P, Out_cov],
+    example_output: Out_cov | None = None,
 ):
     """Wrap a pytorch model to be used in a jax computation.
 
@@ -296,9 +291,12 @@ def _convert_pytorch_module_to_jax(
         # Convert the input data from PyTorch to JAX representations
         # Apply the model function to the input data.
         if example_output is None:
-            if any(isinstance(v, jax.core.Tracer) for v in jax.tree.leaves(params)):
+            if any(
+                isinstance(v, jax.core.Tracer)
+                for v in jax.tree.leaves((params, args, kwargs))
+            ):
                 raise RuntimeError(
-                    "You need to pass `example_output` in order to JIT the function!"
+                    "You need to pass `example_output` in order to JIT the torch function!"
                 )
             params = j2t(params)
             args = j2t(args)
@@ -307,18 +305,25 @@ def _convert_pytorch_module_to_jax(
         else:
             result_shape_dtypes = t2j(example_output)
 
-            def fn(params, *args, **kwargs):
+            # idea: use `torch.compile` as the equivalent of jax's `.jit`?
+            jitted_model_fn = torch.compile(model_fn)
+
+            def pytorch_model_callback(params, *args, **kwargs):
                 params = jax.tree.map(jax_to_torch, params)
                 args = jax.tree.map(jax_to_torch, args)
                 kwargs = jax.tree.map(jax_to_torch, kwargs)
-                out = model_fn(params, *args, **kwargs)
+                out = jitted_model_fn(params, *args, **kwargs)
                 return jax.tree.map(torch_to_jax, out)
 
             # Pass the jax params to the model function in this case, because
             # jax.pure_callback tries to extract the dtypes of the args.
-            # TODO: Check that this doesn't put the jax arrays on CPU though!
             out = jax.pure_callback(
-                fn, result_shape_dtypes, params, *args, **kwargs, vectorized=True
+                pytorch_model_callback,
+                result_shape_dtypes,
+                params,
+                *args,
+                **kwargs,
+                vectorized=True,
             )
         # Convert the output data from JAX to PyTorch representations
         out = t2j(out)
@@ -333,22 +338,24 @@ def _convert_pytorch_module_to_jax(
         # Convert the input data and gradients from PyTorch to JAX representations
 
         if isinstance(grads, jax.core.Tracer):
+            jitted_model_fn = torch.compile(model_fn)
+
             # Compute the gradients using the model function and convert them from JAX to PyTorch representations
-            def _back(params, grads, *args, **kwargs):
-                torch_params = tree_map(jax_to_torch, params)
-                torch_args = tree_map(jax_to_torch, args)
-                torch_kwargs = tree_map(jax_to_torch, kwargs)
-                torch_grads = tree_map(jax_to_torch, grads)
+            def _pytorch_model_backward_callback(params, grads, *args, **kwargs):
+                torch_params = jax.tree.map(jax_to_torch, params)
+                torch_args = jax.tree.map(jax_to_torch, args)
+                torch_kwargs = jax.tree.map(jax_to_torch, kwargs)
+                torch_grads = jax.tree.map(jax_to_torch, grads)
                 _torch_out, torch_jvp_fn = torch.func.vjp(
-                    model_fn, torch_params, *torch_args, **torch_kwargs
+                    jitted_model_fn, torch_params, *torch_args, **torch_kwargs
                 )
                 torch_in_grads = torch_jvp_fn(torch_grads)
                 return torch_in_grads
 
-            # TODO: which one of `params, args or kwargs is the 'input'?
+            # todo: this seems to depend on the model_fn used. Need to
             result_shape_dtypes = (params, args[0])
             in_grads = jax.pure_callback(
-                _back,
+                _pytorch_model_backward_callback,
                 result_shape_dtypes,
                 params,
                 grads,

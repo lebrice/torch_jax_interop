@@ -32,19 +32,18 @@ def test_use_jax_module_in_torch_graph(
         device=input.device,
         generator=torch.Generator(device=input.device).manual_seed(seed),
     )
+
     wrapped_jax_module = JaxModule(jax.jit(jax_network.apply), jax_params)
+    output = wrapped_jax_module(input)
+
+    loss = torch.nn.functional.cross_entropy(output, labels, reduction="mean")
+    loss.backward()
 
     assert len(list(wrapped_jax_module.parameters())) == len(
         jax.tree.leaves(jax_params)
     )
     assert all(p.requires_grad for p in wrapped_jax_module.parameters())
-
-    output = wrapped_jax_module(input)
     assert isinstance(output, torch.Tensor) and output.requires_grad
-
-    loss = torch.nn.functional.cross_entropy(output, labels, reduction="mean")
-    loss.backward()
-
     assert all(
         p.requires_grad and p.grad is not None for p in wrapped_jax_module.parameters()
     )

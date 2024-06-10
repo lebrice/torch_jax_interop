@@ -167,12 +167,11 @@ def torch_network(
     torch_device: torch.device,
 ):
     torch_network_type: type[torch.nn.Module] = request.param
-    with torch_device:
-        with torch.random.fork_rng([torch_device]):
-            torch_network = torch_network_type(num_classes=num_classes)
-            # initialize any un-initialized parameters in the network by doing a forward pass
-            # with a dummy input.
-            torch_network(torch_input)
+    with torch_device, torch.random.fork_rng([torch_device]):
+        torch_network = torch_network_type(num_classes=num_classes)
+        # initialize any un-initialized parameters in the network by doing a forward pass
+        # with a dummy input.
+        torch_network(torch_input)
     return torch_network
 
 

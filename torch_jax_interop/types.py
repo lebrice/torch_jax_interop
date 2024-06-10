@@ -1,10 +1,12 @@
 import dataclasses
+import functools
 import typing
 from typing import (
     Any,
     Callable,
     ClassVar,
     Concatenate,
+    FrozenSet,
     Literal,
     Mapping,
     ParamSpec,
@@ -12,10 +14,14 @@ from typing import (
     Sequence,
     TypeGuard,
     TypeVar,
+    overload,
     runtime_checkable,
 )
 
+import chex
 import jax
+import jax.experimental
+import jax.experimental.checkify
 import torch
 
 K = TypeVar("K")
@@ -115,6 +121,14 @@ def is_sequence_of(
         return False
 
 
+def is_list_of(
+    object: Any, item_type: type[V] | tuple[type[V], ...]
+) -> TypeGuard[list[V]]:
+    """Used to check (and tell the type checker) that `object` is a list of items of
+    this type."""
+    return isinstance(object, list) and is_sequence_of(object, item_type)
+
+
 def jit(
     fn: Callable[P, Out],
 ) -> Callable[P, Out]:
@@ -126,21 +140,44 @@ In = TypeVar("In")
 Aux = TypeVar("Aux")
 
 
+@overload
 def value_and_grad(
     fn: Callable[Concatenate[In, P], tuple[Out, Aux]],
     argnums: Literal[0] = 0,
     has_aux: Literal[True] = True,
 ) -> Callable[Concatenate[In, P], tuple[tuple[Out, Aux], In]]:
+    ...
+
+
+@overload
+def value_and_grad(
+    fn: Callable[Concatenate[In, P], tuple[Out, Aux]],
+    argnums: Sequence[int],
+    has_aux: Literal[True] = True,
+) -> Callable[
+    Concatenate[In, P], tuple[tuple[Out, Aux], tuple[In, *tuple[jax.Array, ...]]]
+]:
+    ...
+
+
+def value_and_grad(
+    fn: Callable[Concatenate[In, P], tuple[Out, Aux]],
+    argnums: Literal[0] | Sequence[int] = 0,
+    has_aux: Literal[True] = True,
+) -> Callable[
+    Concatenate[In, P], tuple[tuple[Out, Aux], In | tuple[In, *tuple[jax.Array, ...]]]
+]:
     """Small type hint fix for jax's `value_and_grad` (preserves the signature of the
     callable)."""
     return jax.value_and_grad(fn, argnums=argnums, has_aux=has_aux)  # type: ignore
 
 
-# def chexify[C: Callable, **P](
-#     c: C,
-#     _fn: Callable[Concatenate[C, P], Any] = chex.chexify,
-#     *args: P.args,
-#     **kwargs: P.kwargs,
-# ) -> C:
-#     # Fix `chex.chexify` so it preserves the jit-ed function's signature and docstring.
-#     return _fn(c, *args, **kwargs)
+def chexify(
+    fn: Callable[P, Out],
+    async_check: bool = True,
+    errors: FrozenSet[
+        jax.experimental.checkify.ErrorCategory
+    ] = chex.ChexifyChecks.user,
+) -> Callable[P, Out]:
+    # Fix `chex.chexify` so it preserves the function's signature.
+    return functools.wraps(fn)(chex.chexify(fn, async_check=async_check, errors=errors))  # type: ignore

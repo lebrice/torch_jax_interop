@@ -10,7 +10,7 @@ import jax
 import torch
 from chex import PyTreeDef
 
-from torch_jax_interop.types import is_sequence_of
+from torch_jax_interop.types import In, Module, is_sequence_of, jit, value_and_grad
 
 from .to_torch import jax_to_torch
 from .utils import log_once
@@ -22,35 +22,24 @@ Out = TypeVar("Out")
 Aux = TypeVar("Aux")
 
 
-class JaxModule(torch.nn.Module, Generic[Params, Out, Aux]):
-    """nn.Module that wraps a jax function (including `flax.linen.Module`s).
+class WrappedJaxFunction(torch.nn.Module, Module[[In], Out]):
+    """nn.Module that wraps a jax function that returns vectors.
 
-    This should be passed a function that accepts two arguments: parameters and an
-    input.
+    The function should have the following signature:
+    `(params, *inputs) -> output`
+
+    This should be passed a function that accepts parameters as a first argument,
+    followed by some inputs (jax.Arrays) and should return a single output (jax.Array).
     """
 
     def __init__(
         self,
         jax_function: Callable[[Params, *tuple[jax.Array, ...]], Out],
         jax_params: Params,
-        jax_value_and_grad_function: Callable[
-            [Params, *tuple[jax.Array, ...]],
-            tuple[tuple[Out, Aux], Params],  # grad w.r.t.  params only
-        ]
-        | Callable[
-            [Params, *tuple[jax.Array, ...]],
-            # grad w.r.t.  params only
-            tuple[tuple[Out, Aux], tuple[Params, *tuple[jax.Array, ...]]],
-        ]
-        | None = None,
         clone_params: bool = False,
     ):
         super().__init__()
-        if isinstance(jax_function, flax.linen.Module):
-            jax_function = jax_function.apply  # type: ignore
-
         self.jax_function = jax_function
-        self.jax_value_and_grad_function = jax_value_and_grad_function
 
         # Flatten the jax parameters so we can store them in a nn.ParameterList.
         flat_params, self.params_treedef = jax.tree.flatten(jax_params)
@@ -64,35 +53,144 @@ class JaxModule(torch.nn.Module, Generic[Params, Out, Aux]):
             flat_params = map(operator.methodcaller("clone"), flat_params)
         self.params = torch.nn.ParameterList(flat_params)
 
-    def forward(self, *inputs: torch.Tensor) -> Out | tuple[Out, Aux]:
+    def forward(self, *args: torch.Tensor) -> Out:
         # todo: check if we could somehow pass an arbitrary number of input arguments instead of just one.
+        flat_inputs, inputs_treedef = jax.tree.flatten(args)
 
-        if self.jax_value_and_grad_function is not None:
-            inputs_treedef = jax.tree.structure(inputs)
-            output = JaxScalarFunction.apply(
-                self.jax_function,
-                self.jax_value_and_grad_function,
-                inputs_treedef,
-                self.params_treedef,
-                *inputs,
-                *self.params,
-            )
-        else:
-            outputs = JaxFunction.apply(
-                self.jax_function,
-                self.params_treedef,
-                *inputs,
-                *self.params,
-            )
-            assert isinstance(outputs, tuple) and len(outputs) == 2
-            output, _jvp_fn = outputs
+        # Flatten everything out before passing it to autograd.
+        output, _jvp_fn = _JaxFunction.apply(
+            self.jax_function,
+            inputs_treedef,
+            self.params_treedef,
+            *flat_inputs,
+            *self.params,
+        )
         return output
 
     if typing.TYPE_CHECKING:
         __call__ = forward
 
 
-class JaxFunction(torch.autograd.Function, Generic[Params]):
+class WrappedJaxScalarFunction(torch.nn.Module, Module[..., tuple[torch.Tensor, Aux]]):
+    """nn.Module that wraps a (scalar-valued) jax function (e.g. a loss function).
+
+    The function should have the following signature:
+    `(params, *inputs) -> (output, aux)` where output is a scalar.
+
+    TODOs:
+    - [ ] Reduce the verbosity of typing to make this easier to read
+    - [ ] Aux type hint is misleading: jax_to_torch is mapped over it, so the type isn't the same as in the wrapped function.
+    # - [ ] Somehow support pytrees as inputs instead of just jax Arrays, via a classmethod that flattens / unflattens stuff?
+    """
+
+    def __init__(
+        self,
+        jax_function: Callable[
+            [Params, *tuple[jax.Array, ...]], tuple[chex.Scalar | jax.Array, Aux]
+        ],
+        jax_params: Params,
+        clone_params: bool = False,
+    ):
+        super().__init__()
+        if isinstance(jax_function, flax.linen.Module):
+            jax_function = jax_function.apply  # type: ignore
+
+        self.jax_function = jax_function
+        # todo: Should we add an argument for users to specify this one?
+        self.jax_value_and_grad_function_wrt_only_params = jit(
+            value_and_grad(jax_function, argnums=0, has_aux=True)
+        )
+        # Flatten the jax parameters so we can store them in a nn.ParameterList.
+        flat_params, self.params_treedef = jax.tree.flatten(jax_params)
+        # Register the parameters.
+        flat_params = map(jax_to_torch, flat_params)
+        if clone_params:
+            # Need to call .clone() when doing distributed training, otherwise we get a RuntimeError:
+            # Invalid device pointer when trying to share the CUDA memory.
+            # TODO: Only do this cloning when necessary (when in distributed training and on
+            # a per-tensor basis) instead of every time.
+            flat_params = map(operator.methodcaller("clone"), flat_params)
+        self.params = torch.nn.ParameterList(flat_params)
+
+        self._value_and_grad_fns: dict[
+            tuple[bool, ...],
+            Callable[
+                [Params, *tuple[jax.Array, ...]],
+                tuple[
+                    tuple[torch.Tensor, Aux],
+                    Params | tuple[Params, *tuple[jax.Array, ...]],
+                ],
+            ],
+        ] = {}
+
+    def forward(self, *inputs: torch.Tensor) -> tuple[torch.Tensor, Aux]:
+        flat_inputs: list[torch.Tensor]
+        flat_inputs, inputs_treedef = jax.tree.flatten(inputs)
+
+        inputs_need_grad = tuple(input.requires_grad for input in flat_inputs)
+        params_need_grad = tuple(param.requires_grad for param in self.parameters())
+        # IDEA: Reuse or create the `value_and_grad` fn that we need
+        # depending on which param / input requires gradients
+        n_inputs = inputs_treedef.num_leaves
+        n_params = self.params_treedef.num_leaves
+
+        if not self._value_and_grad_fns:
+            # When all params need a grad and no input needs one, use the function we
+            # already have (argnums=0):
+            self._value_and_grad_fns[
+                tuple([False] * n_inputs + [True] * n_params)
+            ] = self.jax_value_and_grad_function_wrt_only_params
+            # When neither the params nor the inputs require a gradient, the
+            # value_and_grad function won't be used, so we can just set the same
+            # function.
+            self._value_and_grad_fns[
+                tuple([False] * n_inputs + [False] * n_params)
+            ] = self.jax_value_and_grad_function_wrt_only_params
+
+        key = inputs_need_grad + params_need_grad
+        # Note: when we don't need the value_and_grad function won't be used anyway.
+        if key in self._value_and_grad_fns:
+            # We already have the function to be used to compute the value and desired gradients
+            backward_fn = self._value_and_grad_fns[key]
+        else:
+            logger.info(
+                f"Compiling the `value_and_grad` function needed for {inputs_need_grad=} and {params_need_grad=}"
+            )
+            assert all(params_need_grad)  # assuming all parameters need a grad for now
+            # NOTE: Since all parameters are passed via the `param` is the first positional
+            # argument, currently either no parameters need a grad, or every parameter needs a grad.
+            argnums = (
+                0,
+                *tuple(
+                    i + 1 for i, input in enumerate(flat_inputs) if input.requires_grad
+                ),
+            )
+            logger.debug(f"argnums({argnums=})")
+            backward_fn = jit(
+                value_and_grad(
+                    self.jax_function,
+                    argnums=argnums,
+                    has_aux=True,
+                )
+            )
+            self._value_and_grad_fns[key] = backward_fn
+
+        output = _JaxScalarFunction.apply(
+            self.jax_function,
+            backward_fn,
+            inputs_treedef,
+            self.params_treedef,
+            *inputs,
+            *self.params,
+        )
+        assert isinstance(output, tuple) and len(output) == 2
+        return output
+
+    if typing.TYPE_CHECKING:
+        __call__ = forward
+
+
+class _JaxFunction(torch.autograd.Function, Generic[Params]):
     """Wrapper for a jax function, making it usable in PyTorch's autograd system.
 
     TODOs: make this more flexible in terms of input/output signature:
@@ -103,18 +201,27 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
 
     @staticmethod
     def forward(
-        jax_function: Callable[[Params, jax.Array], jax.Array],
+        jax_function: Callable[[Params, In], Out],
+        inputs_treedef: PyTreeDef,
         params_treedef: PyTreeDef,
-        input: torch.Tensor,
-        *flat_params: torch.Tensor,  # need to flatten the params for autograd to understand that they need a gradient.
+        # need to flatten the params for autograd to understand that they need a gradient.
+        *flat_inputs_and_params: torch.Tensor,
     ):
         from .to_jax import torch_to_jax
 
-        jax_input = torch_to_jax(input)
+        n_inputs = inputs_treedef.num_leaves
+        flat_inputs, flat_params = (
+            flat_inputs_and_params[:n_inputs],
+            flat_inputs_and_params[n_inputs:],
+        )
+        jax_inputs = jax.tree.unflatten(inputs_treedef, map(torch_to_jax, flat_inputs))
         jax_params = jax.tree.unflatten(params_treedef, map(torch_to_jax, flat_params))
-        output, jvp_function = jax.vjp(jax_function, jax_params, jax_input)
-        output = jax_to_torch(output)
+        output, jvp_function = jax.vjp(jax_function, jax_params, *jax_inputs)
+        output = jax.tree.map(jax_to_torch, output)
         return output, jvp_function
+
+    if typing.TYPE_CHECKING:
+        apply = forward  # type: ignore
 
     # setup_context is responsible for calling methods and/or assigning to
     # the ctx object. Please do not do additional compute (e.g. add
@@ -123,10 +230,12 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
     def setup_context(
         ctx: torch.autograd.function.BackwardCFunction, inputs: tuple, output: tuple
     ):
-        jax_function, params_treedef, input, *params = inputs
+        jax_function, inputs_treedef, params_treedef, *inputs_and_params = inputs
         output, jvp_function = output
         # Save the function to use to compute the backward pass.
         ctx.jvp_function = jvp_function  # type: ignore
+        ctx.inputs_treedef = inputs_treedef  # type: ignore
+        ctx.params_treedef = params_treedef  # type: ignore
 
     @torch.autograd.function.once_differentiable
     @staticmethod
@@ -143,34 +252,41 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
             and isinstance(needs_input_grad, tuple)
             and len(needs_input_grad) >= 4
         )
-        _, _, input_needs_grad, *params_need_grad = needs_input_grad
+        _, _, _, *inputs_and_params_need_grad = needs_input_grad
 
         jvp_function = ctx.jvp_function  # type: ignore
+        inputs_treedef: PyTreeDef = ctx.inputs_treedef  # type: ignore
+        params_treedef: PyTreeDef = ctx.params_treedef  # type: ignore
 
-        # todo: remove after debugging is finished.
-        logger.debug(f"{input_needs_grad=}, {params_need_grad=}")
+        n_inputs = inputs_treedef.num_leaves
+        n_params = params_treedef.num_leaves
 
-        input_grad = None
-        flat_param_grads = tuple(None for _ in params_need_grad)
-        if input_needs_grad or any(params_need_grad):
-            _jax_grad_output = torch_to_jax(grad_output)
-            _jax_grad_params, _jax_input_grad = jvp_function(_jax_grad_output)
-            flat_param_grads = jax.tree.leaves(
-                jax.tree.map(jax_to_torch, _jax_grad_params)
-            )
+        inputs_need_grad, params_need_grad = (
+            inputs_and_params_need_grad[:n_inputs],
+            inputs_and_params_need_grad[n_inputs:],
+        )
 
-            # Only give out the gradients if they were requested.
-            flat_param_grads = tuple(
-                flat_param_grad if params_need_grad[i] else None
-                for i, flat_param_grad in enumerate(flat_param_grads)
-            )
-            input_grad = jax_to_torch(_jax_input_grad) if input_needs_grad else None
+        _jax_grad_output = torch_to_jax(grad_output)
+        _jax_grad_params, *_jax_input_grads = jvp_function(_jax_grad_output)
 
-        # Check that we created all the gradients we needed to.
-        assert (input_grad is not None) == input_needs_grad
-        for i, param_needs_grad in enumerate(params_need_grad):
-            assert (flat_param_grads[i] is not None) == param_needs_grad
-        return None, None, input_grad, *flat_param_grads
+        flat_param_grads = jax.tree.leaves(jax.tree.map(jax_to_torch, _jax_grad_params))
+        flat_input_grads = jax.tree.leaves(jax.tree.map(jax_to_torch, _jax_input_grads))
+
+        # Only give out the gradients if they were requested.
+        assert len(flat_param_grads) == n_params
+        assert len(flat_input_grads) == n_inputs
+        flat_param_grads = tuple(
+            flat_param_grad if params_need_grad[i] else None
+            for i, flat_param_grad in enumerate(flat_param_grads)
+        )
+        # We have gradients for inputs that don't require them.
+        assert len(flat_input_grads) == len(inputs_need_grad)
+        flat_input_grads = tuple(
+            flat_input_grad if inputs_need_grad[i] else None
+            for i, flat_input_grad in enumerate(flat_input_grads)
+        )
+
+        return None, None, None, *flat_input_grads, *flat_param_grads
 
     @staticmethod
     def jvp(
@@ -226,13 +342,17 @@ class JaxFunction(torch.autograd.Function, Generic[Params]):
         return vmapped_result
 
 
-class JaxScalarFunction(torch.autograd.Function, Generic[Params, Aux]):
+class _JaxScalarFunction(torch.autograd.Function, Generic[Params, Aux]):
     """Wrapper for a jax scalar-valued function, making it usable in PyTorch's autograd
     system.
 
     This has potentially an advantage compared to `JaxFunction` (which is more general):
     It gets to use (and jit) the `jax.value_and_grad` of the function.
+
+    TODO: Assumes that the function "has an aux": that it returns a tuple of (val, aux).
     """
+
+    # todo: If we used setup_context we could maybe have **kwargs in the forward?
 
     @staticmethod
     def forward(
@@ -242,13 +362,19 @@ class JaxScalarFunction(torch.autograd.Function, Generic[Params, Aux]):
         ],
         jax_value_and_grad_function: Callable[
             [Params, *tuple[jax.Array, ...]],
-            tuple[tuple[chex.Scalar, Aux], tuple[Params, *tuple[jax.Array, ...]]],
+            tuple[
+                tuple[chex.Scalar, Aux],  # outputs
+                Params  # grads of params only
+                | tuple[Params, *tuple[jax.Array, ...]],  # grads of params and inputs
+            ],
         ],
         inputs_treedef: PyTreeDef,
         params_treedef: PyTreeDef,
         # need to flatten the inputs and params for autograd to understand that they need a gradient.
         *flatened_inputs_and_params: torch.Tensor,
     ):
+        # TODO: Keep the aux the same? Or convert to torch?
+
         from .to_jax import torch_to_jax
 
         flat_inputs, flat_params = (
@@ -268,51 +394,49 @@ class JaxScalarFunction(torch.autograd.Function, Generic[Params, Aux]):
         ctx.inputs_treedef = inputs_treedef  # type: ignore
         ctx.params_treedef = params_treedef  # type: ignore
 
-        if any(inputs_need_grad) or any(params_need_grad):
-            # todo: a bit hard to tell if the grads are for the params and the input or
-            # just the params.
-            # It's also hard to tell how to pass the inputs to the function.
-            # Should we fix the number of input arguments, for example?
-            # todo: only calculate the gradients we care about by changing the argnums
-            # passed to value_and_grad, possibly using something like functools.cache to
-            # save the results.
-            (
-                (jax_output, jax_aux),
-                jax_grads,
-            ) = jax_value_and_grad_function(jax_params, *jax_inputs)
-
-            flat_jax_grads = jax.tree.leaves(jax_grads)
-            if len(flat_jax_grads) == params_treedef.num_leaves:
-                # The `value_and_grad_function` calculated the gradients w.r.t. only the parameters.
-                if any(inputs_need_grad):
-                    raise RuntimeError(
-                        f"The {jax_value_and_grad_function=} only calculated the gradients "
-                        f"for the params (arg 0), but Torch also wants the gradients for the inputs!"
-                    )
-                param_grads = map(jax_to_torch, flat_jax_grads)
-                input_grads = [None] * inputs_treedef.num_leaves
-                ctx.save_for_backward(*param_grads)
-            else:
-                # The `value_and_grad_function` calculated the gradients w.r.t. the parameters and inputs.
-                assert isinstance(jax_grads, tuple) and len(jax_grads) >= 2
-                jax_param_grads = jax_grads[0]
-                param_grads = jax.tree.leaves(
-                    jax.tree.map(jax_to_torch, jax_param_grads)
-                )
-                jax_input_grads = jax.tree.unflatten(inputs_treedef, jax_grads[1:])
-                input_grads = jax.tree.leaves(
-                    jax.tree.map(jax_to_torch, jax_input_grads)
-                )
-                ctx.save_for_backward(*input_grads, *param_grads)
-
-            output = jax_to_torch(jax_output)
-            aux = jax.tree.map(jax_to_torch, jax_aux)
-        else:
-            # just a forward pass.
+        if not any(inputs_need_grad) and not any(params_need_grad):
+            # Do only the forward pass.
             assert not any(inputs_need_grad) and not any(params_need_grad)
             jax_output, jax_aux = jax_function(jax_params, *jax_inputs)
-            output = jax_to_torch(jax_output)
+            output = jax.tree.map(jax_to_torch, jax_output)
+            # TODO: Keep the aux the same? Or convert to torch?
             aux = jax.tree.map(jax_to_torch, jax_aux)
+            return output, aux
+
+        # We only calculate the gradients we care about by changing the argnums
+        # passed to value_and_grad.
+        (
+            (jax_output, jax_aux),
+            jax_grads_depending_on_argnums,
+        ) = jax_value_and_grad_function(jax_params, *jax_inputs)
+
+        output = jax.tree.map(jax_to_torch, jax_output)
+        aux = jax.tree.map(jax_to_torch, jax_aux)
+
+        if any(params_need_grad) and not any(inputs_need_grad):
+            # The `value_and_grad_function` is used to calculate the gradients w.r.t.
+            # only the parameters.
+            flat_jax_grads = jax.tree.leaves(jax_grads_depending_on_argnums)
+            param_grads = tuple(map(jax_to_torch, flat_jax_grads))
+            ctx.save_for_backward(*param_grads)
+            return output, aux
+
+        assert any(inputs_need_grad)
+        assert all(params_need_grad)  # assuming that all params need a gradient.
+
+        # The `value_and_grad_function` calculated the gradients w.r.t. the
+        # parameters and (some?) inputs.
+        assert (
+            isinstance(jax_grads_depending_on_argnums, tuple)
+            and len(jax_grads_depending_on_argnums) >= 2
+        )
+        jax_param_grads, *jax_input_grads = jax_grads_depending_on_argnums
+        param_grads = jax.tree.leaves(jax.tree.map(jax_to_torch, jax_param_grads))
+        # Some inputs might need gradients.
+        assert len(jax_input_grads) <= inputs_treedef.num_leaves
+        input_grads = jax.tree.leaves(jax.tree.map(jax_to_torch, jax_input_grads))
+        ctx.save_for_backward(*input_grads, *param_grads)
+
         return output, aux
 
     @torch.autograd.function.once_differentiable
@@ -324,46 +448,63 @@ class JaxScalarFunction(torch.autograd.Function, Generic[Params, Aux]):
     ):
         assert not grad_output.shape
         assert (grad_output == torch.ones_like(grad_output)).all()
+
+        # The gradients have already been computed with `value_and_grad`, so here we
+        # just return them from ctx.saved_tensors depending on `ctx.needs_input_grad`.
+
         inputs_treedef: PyTreeDef = ctx.inputs_treedef  # type: ignore
         params_treedef: PyTreeDef = ctx.params_treedef  # type: ignore
         _, _, _, _, *flat_inputs_and_params_need_grad = ctx.needs_input_grad  # type: ignore
-        if len(ctx.saved_tensors) == len(flat_inputs_and_params_need_grad):
-            inputs_need_frad, params_need_grad = (
-                flat_inputs_and_params_need_grad[: inputs_treedef.num_leaves],
-                flat_inputs_and_params_need_grad[inputs_treedef.num_leaves :],
-            )
-            saved_tensors = ctx.saved_tensors
-            input_grads, param_grads = (
-                saved_tensors[: inputs_treedef.num_leaves],
-                saved_tensors[inputs_treedef.num_leaves :],
-            )
-            input_grads = [
-                input_grad if needed_grad else None
-                for input_grad, needed_grad in zip(input_grads, inputs_need_frad)
-            ]
-            param_grads = [
-                param_grad if needed_grad else None
-                for param_grad, needed_grad in zip(param_grads, params_need_grad)
-            ]
-            return None, None, None, None, *input_grads, *param_grads
-        else:
+
+        n_inputs = inputs_treedef.num_leaves
+        n_params = params_treedef.num_leaves
+
+        inputs_need_grad, params_need_grad = (
+            flat_inputs_and_params_need_grad[:n_inputs],
+            flat_inputs_and_params_need_grad[n_inputs:],
+        )
+
+        if not any(inputs_need_grad) and len(ctx.saved_tensors) == n_params:
             # We saved the gradients of the parameters (but not of the inputs).
-            inputs_need_grad, params_need_grad = (
-                flat_inputs_and_params_need_grad[: inputs_treedef.num_leaves],
-                flat_inputs_and_params_need_grad[inputs_treedef.num_leaves :],
-            )
-            assert not any(inputs_need_grad)
-            assert (
-                len(ctx.saved_tensors)
-                == params_treedef.num_leaves
-                == len(params_need_grad)
-            )
-
             input_grads = [None] * inputs_treedef.num_leaves
-            param_grads = ctx.saved_tensors
-
+            # Remove the grads of parameters that didn't require them.
             param_grads = [
                 param_grad if needed_grad else None
-                for param_grad, needed_grad in zip(param_grads, params_need_grad)
+                for param_grad, needed_grad in zip(ctx.saved_tensors, params_need_grad)
             ]
             return None, None, None, None, *input_grads, *param_grads
+
+        assert all(params_need_grad)
+        assert any(inputs_need_grad)
+
+        saved_tensors: tuple[torch.Tensor, ...] = ctx.saved_tensors  # type: ignore
+
+        # Here we do it slightly differently, because we might not have `n_inputs` input
+        # gradients saved: it depends on the `argnums` of the `value_and_grad` function
+        # that was used in forward.
+
+        n_inputs_that_needed_grad = sum(inputs_need_grad)
+        n_params_that_needed_grad = sum(params_need_grad)
+        # We should have as many saved tensors as there are inputs that needed a grad.
+        assert (
+            len(ctx.saved_tensors)
+            == n_inputs_that_needed_grad + n_params_that_needed_grad
+        )
+
+        input_grads, param_grads = (
+            saved_tensors[:n_inputs_that_needed_grad],
+            saved_tensors[n_inputs_that_needed_grad:],
+        )
+        # Consume the saved input grads, assigning them to the right index:
+        saved_input_grads = list(input_grads)
+        input_grads = [
+            saved_input_grads.pop(0) if needed_grad else None
+            for needed_grad in inputs_need_grad
+        ]
+        # Only give out a grad for parameters that required them.
+        # note: un-needed atm, since above we assume all(params_need_grad!)
+        param_grads = [
+            param_grad if needed_grad else None
+            for param_grad, needed_grad in zip(param_grads, params_need_grad)
+        ]
+        return None, None, None, None, *input_grads, *param_grads

@@ -9,8 +9,11 @@ from tensor_regression import TensorRegressionFixture
 
 from torch_jax_interop import jax_to_torch
 from torch_jax_interop.conftest import JaxCNN, TorchCNN
-from torch_jax_interop.to_torch_module import JaxModule
-from torch_jax_interop.utils import to_channels_last
+from torch_jax_interop.to_torch_module import (
+    WrappedJaxFunction,
+    WrappedJaxScalarFunction,
+)
+from torch_jax_interop.types import jit
 
 
 def test_use_jax_module_in_torch_graph(
@@ -24,7 +27,7 @@ def test_use_jax_module_in_torch_graph(
 
     batch_size = torch_input.shape[0]
 
-    input = to_channels_last(torch_input).clone().detach().requires_grad_(True)
+    input = torch_input.clone().detach().requires_grad_(True)
     labels = torch.randint(
         0,
         num_classes,
@@ -33,26 +36,25 @@ def test_use_jax_module_in_torch_graph(
         generator=torch.Generator(device=input.device).manual_seed(seed),
     )
 
-    wrapped_jax_module = JaxModule(jax.jit(jax_network.apply), jax_params)
-    output = wrapped_jax_module(input)
+    wrapped_jax_module = WrappedJaxFunction(jax.jit(jax_network.apply), jax_params)
+    logits = wrapped_jax_module(input)
 
-    loss = torch.nn.functional.cross_entropy(output, labels, reduction="mean")
+    loss = torch.nn.functional.cross_entropy(logits, labels, reduction="mean")
     loss.backward()
 
     assert len(list(wrapped_jax_module.parameters())) == len(
         jax.tree.leaves(jax_params)
     )
     assert all(p.requires_grad for p in wrapped_jax_module.parameters())
-    assert isinstance(output, torch.Tensor) and output.requires_grad
+    assert isinstance(logits, torch.Tensor) and logits.requires_grad
     assert all(
         p.requires_grad and p.grad is not None for p in wrapped_jax_module.parameters()
     )
-
     assert input.grad is not None
     tensor_regression.check(
         {
             "input": input,
-            "output": output,
+            "output": logits,
             "loss": loss,
             "input_grad": input.grad,
         }
@@ -61,12 +63,14 @@ def test_use_jax_module_in_torch_graph(
     )
 
 
+@pytest.mark.parametrize("input_requires_grad", [False, True])
 def test_use_jax_scalar_function_in_torch_graph(
     jax_network_and_params: tuple[flax.linen.Module, VariableDict],
     torch_input: torch.Tensor,
     tensor_regression: TensorRegressionFixture,
     num_classes: int,
     seed: int,
+    input_requires_grad: bool,
 ):
     """Same idea, but now its the entire loss function that is in jax, not just the
     module."""
@@ -74,7 +78,7 @@ def test_use_jax_scalar_function_in_torch_graph(
 
     batch_size = torch_input.shape[0]
 
-    @jax.jit
+    @jit
     def loss_fn(
         params: VariableDict, x: jax.Array, y: jax.Array
     ) -> tuple[jax.Array, jax.Array]:
@@ -85,9 +89,12 @@ def test_use_jax_scalar_function_in_torch_graph(
         return loss, logits
 
     # todo: add a test case where the input is floating point and requires gradients.
-    input = (
-        torch_input  # note: the input can't require grad because it's an int tensor.
-    )
+    if not input_requires_grad:
+        # note: the input can't require grad because it's an int tensor.
+        input = torch_input
+    else:
+        input = torch_input.float().clone().detach().requires_grad_(True)
+
     labels = torch.randint(
         0,
         num_classes,
@@ -96,19 +103,16 @@ def test_use_jax_scalar_function_in_torch_graph(
         generator=torch.Generator(device=input.device).manual_seed(seed),
     )
 
-    # Only get the parameter gradients.
-    value_and_grad_function = jax.jit(
-        jax.value_and_grad(loss_fn, argnums=0, has_aux=True)
-    )
-    wrapped_jax_module = JaxModule(
-        loss_fn, jax_params, jax_value_and_grad_function=value_and_grad_function
-    )
+    wrapped_jax_module = WrappedJaxScalarFunction(loss_fn, jax_params)
 
     assert len(list(wrapped_jax_module.parameters())) == len(
         jax.tree.leaves(jax_params)
     )
     assert all(p.requires_grad for p in wrapped_jax_module.parameters())
-    assert not input.requires_grad
+    if not input_requires_grad:
+        assert not input.requires_grad
+    else:
+        assert input.requires_grad
     assert not labels.requires_grad
     loss, logits = wrapped_jax_module(input, labels)
     assert isinstance(loss, torch.Tensor) and loss.requires_grad
@@ -118,6 +122,10 @@ def test_use_jax_scalar_function_in_torch_graph(
     assert all(
         p.requires_grad and p.grad is not None for p in wrapped_jax_module.parameters()
     )
+    if input_requires_grad:
+        assert input.grad is not None
+    else:
+        assert input.grad is None
 
     tensor_regression.check(
         {

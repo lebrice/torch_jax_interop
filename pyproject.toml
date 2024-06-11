@@ -33,3 +33,9 @@ build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.pytest_env]
 CUBLAS_WORKSPACE_CONFIG=":4096:8"
+
+
+
+# pyproject.toml
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"

@@ -1,6 +1,9 @@
+import random
+
 import flax.linen
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 import torch
 from tensor_regression.stats import get_simple_attributes
@@ -16,9 +19,26 @@ def jax_array_simple_attributes(array: jnp.ndarray, precision: int | None) -> di
     return get_simple_attributes(jax_to_torch(array), precision=precision)
 
 
-@pytest.fixture(scope="session", params=[123], ids="seed={}".format)
-def seed(request: pytest.FixtureRequest) -> int:
-    return request.param
+DEFAULT_SEED = 123
+
+
+@pytest.fixture(autouse=True)
+def seed(request: pytest.FixtureRequest):
+    """Fixture that seeds everything for reproducibility and yields the random seed
+    used."""
+    random_seed = getattr(request, "param", DEFAULT_SEED)
+    assert isinstance(random_seed, int) or random_seed is None
+
+    random_state = random.getstate()
+    np_random_state = np.random.get_state()
+    with torch.random.fork_rng(devices=list(range(torch.cuda.device_count()))):
+        random.seed(random_seed)
+        np.random.seed(random_seed)
+        torch.manual_seed(random_seed)
+        yield random_seed
+
+    random.setstate(random_state)
+    np.random.set_state(np_random_state)
 
 
 @pytest.fixture(
@@ -158,7 +178,7 @@ def num_classes():
     return 10
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="session")
 def make_torch_deterministic():
     mode = torch.get_deterministic_debug_mode()
 

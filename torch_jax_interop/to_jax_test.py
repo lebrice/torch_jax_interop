@@ -171,6 +171,15 @@ def test_log_once_on_unsupported_value(
     assert len(caplog.records) == 0
 
 
+def test_torch_params_dont_change(
+    torch_network: torch.nn.Module, tensor_regression: TensorRegressionFixture
+):
+    tensor_regression.check(
+        dict(torch_network.named_parameters()),
+        include_gpu_name_in_stats=False,
+    )
+
+
 @pytest.mark.parametrize("with_jit", [False, True])
 @pytest.mark.parametrize("input_needs_grad", [False, True])
 def test_use_torch_module_in_jax_graph(

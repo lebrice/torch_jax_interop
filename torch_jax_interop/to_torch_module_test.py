@@ -1,3 +1,5 @@
+from typing import Callable
+
 import flax.linen
 import jax
 import jax.test_util
@@ -10,24 +12,36 @@ from tensor_regression import TensorRegressionFixture
 from torch_jax_interop import jax_to_torch
 from torch_jax_interop.conftest import JaxCNN, TorchCNN
 from torch_jax_interop.to_torch_module import (
+    JaxPyTree,
     WrappedJaxFunction,
     WrappedJaxScalarFunction,
 )
 from torch_jax_interop.types import jit
 
 
+@pytest.mark.parametrize("clone_params", [False, True], ids="clone_params={}".format)
+@pytest.mark.parametrize("use_jit", [False, True], ids="jit={}".format)
+@pytest.mark.parametrize("has_aux", [False, True], ids="aux={}".format)
+@pytest.mark.parametrize(
+    "input_requires_grad", [False, True], ids="input_requires_grad={}".format
+)
 def test_use_jax_module_in_torch_graph(
     jax_network_and_params: tuple[flax.linen.Module, VariableDict],
     torch_input: torch.Tensor,
     tensor_regression: TensorRegressionFixture,
     num_classes: int,
     seed: int,
+    has_aux: bool,
+    use_jit: bool,
+    clone_params: bool,
+    input_requires_grad: bool,
+    torch_device: torch.device,
 ):
     jax_network, jax_params = jax_network_and_params
 
     batch_size = torch_input.shape[0]
 
-    input = torch_input.clone().detach().requires_grad_(True)
+    input = torch_input.clone().detach().requires_grad_(input_requires_grad)
     labels = torch.randint(
         0,
         num_classes,
@@ -36,11 +50,61 @@ def test_use_jax_module_in_torch_graph(
         generator=torch.Generator(device=input.device).manual_seed(seed),
     )
 
-    wrapped_jax_module = WrappedJaxFunction(jax.jit(jax_network.apply), jax_params)
-    logits = wrapped_jax_module(input)
+    if not has_aux:
+        jax_function: Callable[
+            [JaxPyTree, *tuple[jax.Array, ...]], jax.Array
+        ] = jax_network.apply  # type: ignore
 
-    loss = torch.nn.functional.cross_entropy(logits, labels, reduction="mean")
-    loss.backward()
+        if use_jit:
+            jax_function = jit(jax_function)
+
+        wrapped_jax_module = WrappedJaxFunction(
+            jax_function, jax_params, has_aux=has_aux, clone_params=clone_params
+        )
+
+        logits = wrapped_jax_module(input)
+
+        loss = torch.nn.functional.cross_entropy(logits, labels, reduction="mean")
+        loss.backward()
+
+    else:
+
+        def jax_function_with_aux(
+            params: JaxPyTree, *inputs: jax.Array
+        ) -> tuple[jax.Array, JaxPyTree]:
+            out = jax_network.apply(params, *inputs)
+            assert isinstance(out, jax.Array)
+            aux = {"mean": out.mean(), "max": out.max()}
+            return out, aux
+
+        if use_jit:
+            jax_function_with_aux = jit(jax_function_with_aux)
+
+        wrapped_jax_module = WrappedJaxFunction(
+            jax_function_with_aux,
+            jax_params,
+            has_aux=has_aux,
+            clone_params=clone_params,
+        )
+
+        logits, stats_dict = wrapped_jax_module(input)
+        loss = torch.nn.functional.cross_entropy(logits, labels, reduction="mean")
+        loss.backward()
+
+        # Check that the stats dict has the same structure but contains pytorch tensors
+        # instead of jax arrays.
+
+        assert isinstance(stats_dict, dict)
+        mean = stats_dict["mean"]
+        assert isinstance(mean, torch.Tensor)
+        assert mean.device == torch_device
+        torch.testing.assert_close(mean, logits.mean())
+        assert not mean.requires_grad
+        max = stats_dict["max"]
+        assert isinstance(max, torch.Tensor)
+        assert max.device == torch_device
+        torch.testing.assert_close(max, logits.max())
+        assert not max.requires_grad
 
     assert len(list(wrapped_jax_module.parameters())) == len(
         jax.tree.leaves(jax_params)
@@ -50,7 +114,10 @@ def test_use_jax_module_in_torch_graph(
     assert all(
         p.requires_grad and p.grad is not None for p in wrapped_jax_module.parameters()
     )
-    assert input.grad is not None
+    if input_requires_grad:
+        assert input.grad is not None
+    else:
+        assert input.grad is None
     tensor_regression.check(
         {
             "input": input,

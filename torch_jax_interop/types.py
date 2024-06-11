@@ -129,9 +129,7 @@ def is_list_of(
     return isinstance(object, list) and is_sequence_of(object, item_type)
 
 
-def jit(
-    fn: Callable[P, Out],
-) -> Callable[P, Out]:
+def jit(fn: Callable[P, Out]) -> Callable[P, Out]:
     """Small type hint fix for jax's `jit` (preserves the signature of the callable)."""
     return jax.jit(fn)  # type: ignore
 

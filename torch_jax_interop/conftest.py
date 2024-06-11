@@ -158,6 +158,15 @@ def num_classes():
     return 10
 
 
+@pytest.fixture(autouse=True)
+def make_torch_deterministic():
+    mode = torch.get_deterministic_debug_mode()
+
+    torch.set_deterministic_debug_mode("error")
+    yield
+    torch.set_deterministic_debug_mode(mode)
+
+
 @pytest.fixture(params=[TorchCNN, TorchFcNet])
 def torch_network(
     request: pytest.FixtureRequest,

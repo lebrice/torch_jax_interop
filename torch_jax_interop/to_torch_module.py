@@ -2,7 +2,7 @@ import logging
 import operator
 import typing
 from logging import getLogger as get_logger
-from typing import Any, Callable, Generic, Literal, Mapping, TypeVar, overload
+from typing import Any, Callable, Generic, Literal, overload
 
 import chex
 import jax
@@ -17,28 +17,12 @@ from torch_jax_interop.types import (
 )
 
 from .to_torch import jax_to_torch
+from .types import Aux, JaxPyTree, Params, TorchPyTree
 from .utils import log_once
 
 logger = get_logger(__name__)
-
-Scalar = float | int | bool
-JaxPyTree = (
-    Scalar
-    | jax.Array
-    | tuple["JaxPyTree", ...]
-    | list["JaxPyTree"]
-    | Mapping[Any, "JaxPyTree"]
-)
-TorchPyTree = (
-    Scalar
-    | torch.Tensor
-    | tuple["TorchPyTree", ...]
-    | list["TorchPyTree"]
-    | Mapping[Any, "TorchPyTree"]
-)
-Params = TypeVar("Params", bound=JaxPyTree)
-Out = TypeVar("Out")
-Aux = TypeVar("Aux")
+# todo: make it possible to have different out type than just a single tensor/array.
+Out = jax.Array
 
 
 class WrappedJaxFunction(torch.nn.Module):
@@ -48,7 +32,6 @@ class WrappedJaxFunction(torch.nn.Module):
     (jax.Arrays) and should return a single output (jax.Array).
 
     TODOs:
-    - [ ] Add support for `has_aux=True`, same as is done for scalar functions.
     - [ ] Test and add support for different combinations of .requires_grad in inputs.
     - [ ] Add support for multiple outputs instead of a single tensor.
     - [ ] Somehow support pytrees as inputs instead of just jax Arrays, maybe with a
@@ -112,6 +95,17 @@ class WrappedJaxFunction(torch.nn.Module):
     ):
         ...
 
+    @overload
+    def __init__(
+        self,
+        jax_function: Callable[[Params, *tuple[jax.Array, ...]], jax.Array]
+        | Callable[[Params, *tuple[jax.Array, ...]], tuple[jax.Array, JaxPyTree]],
+        jax_params: Params,
+        has_aux: bool = True,
+        clone_params: bool = False,
+    ):
+        ...
+
     def __init__(
         self,
         jax_function: Callable[[Params, *tuple[jax.Array, ...]], jax.Array]
@@ -126,6 +120,7 @@ class WrappedJaxFunction(torch.nn.Module):
         ----------
         jax_function: Function to wrap.
         jax_params: Initial value for the parameters (PyTree of jax arrays).
+        has_aux: Whether the jax function returns an additional output (auxiliary data).
         clone_params: Whether the torch tensors should be copies of the jax parameters \
             instead of sharing the same memory. Set this to `True` when you plan to do \
             distributed training, otherwise you could run into 'invalid device \
@@ -145,7 +140,9 @@ class WrappedJaxFunction(torch.nn.Module):
             flat_params = map(operator.methodcaller("clone"), flat_params)
         self.params = torch.nn.ParameterList(flat_params)
 
-    def forward(self, *args: torch.Tensor) -> Any:
+    def forward(
+        self, *args: torch.Tensor
+    ) -> torch.Tensor | tuple[torch.Tensor, TorchPyTree]:
         flat_inputs, inputs_treedef = jax.tree.flatten(args)
         # Flatten everything out before passing it to autograd.
         # todo: this should be `flat_outputs` and be unflattened before being returned.
@@ -167,6 +164,9 @@ class WrappedJaxFunction(torch.nn.Module):
         __call__ = forward
 
 
+Output = jax.Array
+
+
 class WrappedJaxScalarFunction(WrappedJaxFunction):
     """Wraps a jax function that returns scalars into a `torch.nn.Module`.
 
@@ -182,10 +182,10 @@ class WrappedJaxScalarFunction(WrappedJaxFunction):
         self,
         jax_function: Callable[
             [Params, *tuple[jax.Array, ...]],
-            Scalar | jax.Array,
+            jax.Array,
         ],
         jax_params: Params,
-        hax_aux: Literal[False] = False,
+        has_aux: Literal[False] = False,
         clone_params: bool = False,
     ):
         ...
@@ -195,10 +195,10 @@ class WrappedJaxScalarFunction(WrappedJaxFunction):
         self,
         jax_function: Callable[
             [Params, *tuple[jax.Array, ...]],
-            tuple[Scalar | jax.Array, JaxPyTree],
+            tuple[jax.Array, JaxPyTree],
         ],
         jax_params: Params,
-        hax_aux: Literal[True] = True,
+        has_aux: Literal[True] = True,
         clone_params: bool = False,
     ):
         ...
@@ -207,34 +207,34 @@ class WrappedJaxScalarFunction(WrappedJaxFunction):
         self,
         jax_function: Callable[
             [Params, *tuple[jax.Array, ...]],
-            Scalar | jax.Array,
+            jax.Array,
         ]
         | Callable[
             [Params, *tuple[jax.Array, ...]],
-            tuple[Scalar | jax.Array, JaxPyTree],
+            tuple[jax.Array, JaxPyTree],
         ],
         jax_params: Params,
-        hax_aux: bool = True,
+        has_aux: bool = True,
         clone_params: bool = False,
     ):
         super().__init__(
             jax_function=jax_function,
             jax_params=jax_params,
-            has_aux=hax_aux,
+            has_aux=has_aux,
             clone_params=clone_params,
         )
         self.jax_function: Callable[
-            [Params, *tuple[jax.Array, ...]], tuple[chex.Scalar | jax.Array, Any]
+            [Params, *tuple[jax.Array, ...]], tuple[jax.Array, JaxPyTree]
         ]
         self.jax_value_and_grad_function_wrt_only_params = jit(
-            value_and_grad(jax_function, argnums=0, has_aux=True)
+            value_and_grad(jax_function, argnums=0, has_aux=has_aux)
         )
         self._value_and_grad_fns: dict[
             tuple[bool, ...],  # the `.requires_grad` of the (*inputs, *params).
             Callable[
                 [Params, *tuple[jax.Array, ...]],  # same signature as the fn
                 tuple[
-                    tuple[jax.Array | chex.Scalar, Any],  # returns the output value
+                    jax.Array | tuple[jax.Array, JaxPyTree],  # returns the output value
                     # and gradients of either just params or params and inputs:
                     Params | tuple[Params, *tuple[jax.Array, ...]],
                 ],
@@ -340,8 +340,11 @@ class _JaxFunction(torch.autograd.Function, Generic[Params]):
         jax_params = jax.tree.unflatten(params_treedef, map(torch_to_jax, flat_params))
         # todo: support multiple outputs and/or `has_aux=True`.
         if has_aux:
+            jax_function_with_aux = typing.cast(
+                Callable[[Params, In], tuple[Out, Aux]], jax_function
+            )
             output, jvp_function, aux = jax.vjp(
-                jax_function, jax_params, *jax_inputs, has_aux=has_aux
+                jax_function_with_aux, jax_params, *jax_inputs, has_aux=has_aux
             )
             output = jax.tree.map(jax_to_torch, output)
             aux = jax.tree.map(jax_to_torch, aux)

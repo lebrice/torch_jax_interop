@@ -16,7 +16,9 @@ import torch
 import torch.func
 import torch.utils._pytree
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
-from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
+from torch.utils.dlpack import to_dlpack as torch_to_dlpack
+
+from torch_jax_interop.to_torch_module import JaxPyTree  # type: ignore
 
 from .types import (
     Dataclass,
@@ -27,7 +29,7 @@ from .types import (
     NestedMapping,
     Out_cov,
     P,
-    PyTree,
+    TorchPyTree,
     is_sequence_of,
 )
 from .utils import (
@@ -201,7 +203,7 @@ def torch_to_jax_nn_module(
         example_out = jax.tree.map(torch_to_jax, example_output)
     else:
         example_out = None
-    jax_fn, jax_params = _convert_pytorch_module_to_jax(
+    jax_fn, jax_params = convert_pytorch_module_to_jax(
         model, example_output=example_out
     )
     assert is_sequence_of(jax_params, jax.Array)
@@ -242,7 +244,7 @@ def make_functional(
     return fmodel, params_values
 
 
-def _convert_pytorch_module_to_jax(
+def convert_pytorch_module_to_jax(
     model: Module[P, Out_cov],
     example_output: Out_cov | None = None,
 ):
@@ -264,7 +266,7 @@ def _convert_pytorch_module_to_jax(
     """
     from .to_torch import jax_to_torch
 
-    def j2t(v: PyTree[jax.Array]) -> PyTree[torch.Tensor]:
+    def j2t(v: JaxPyTree) -> TorchPyTree:
         if any(isinstance(v_i, jax.core.Tracer) for v_i in jax.tree.leaves(v)):
             # running inside JIT.
             return jax.pure_callback(
@@ -272,7 +274,7 @@ def _convert_pytorch_module_to_jax(
             )
         return jax.tree.map(jax_to_torch, v)
 
-    def t2j(v: PyTree[torch.Tensor]) -> PyTree[jax.Array]:
+    def t2j(v: TorchPyTree) -> JaxPyTree:
         if any(isinstance(v_i, jax.core.Tracer) for v_i in jax.tree.leaves(v)):
             # running inside JIT.
             return jax.pure_callback(

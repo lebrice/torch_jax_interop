@@ -5,7 +5,6 @@ from typing import (
     Any,
     Callable,
     ClassVar,
-    Concatenate,
     FrozenSet,
     Literal,
     Mapping,
@@ -14,6 +13,7 @@ from typing import (
     Sequence,
     TypeGuard,
     TypeVar,
+    TypeVarTuple,
     overload,
     runtime_checkable,
 )
@@ -29,6 +29,7 @@ V = TypeVar("V")
 C = TypeVar("C", bound=Callable)
 Out = TypeVar("Out")
 P = ParamSpec("P")
+Aux = TypeVar("Aux")
 
 NestedDict = dict[K, V | "NestedDict[K, V]"]
 NestedMapping = Mapping[K, V | "NestedMapping[K, V]"]
@@ -36,10 +37,22 @@ NestedMapping = Mapping[K, V | "NestedMapping[K, V]"]
 T = TypeVar("T")
 PyTree = T | tuple["PyTree[T]", ...] | list["PyTree[T]"] | dict[Any, "PyTree[T]"]
 
-
-def tree_map(f: Callable[[T], Out], tree: PyTree[T]) -> PyTree[Out]:
-    """Maps a function over a PyTree."""
-    return jax.tree.map(f, tree)
+Scalar = float | int | bool
+JaxPyTree = (
+    Scalar
+    | jax.Array
+    | tuple["JaxPyTree", ...]
+    | list["JaxPyTree"]
+    | Mapping[Any, "JaxPyTree"]
+)
+TorchPyTree = (
+    Scalar
+    | torch.Tensor
+    | tuple["TorchPyTree", ...]
+    | list["TorchPyTree"]
+    | Mapping[Any, "TorchPyTree"]
+)
+Params = TypeVar("Params", bound=JaxPyTree)
 
 
 T = TypeVar("T", jax.Array, torch.Tensor)
@@ -136,38 +149,65 @@ def jit(fn: Callable[P, Out]) -> Callable[P, Out]:
 
 In = TypeVar("In")
 Aux = TypeVar("Aux")
+In2 = TypeVar("In2")
+In3 = TypeVar("In3")
+Ts = TypeVarTuple("Ts")
 
 
+# argnums = 0
 @overload
 def value_and_grad(
-    fn: Callable[Concatenate[In, P], tuple[Out, Aux]],
+    fn: Callable[[In, *Ts], Out],
     argnums: Literal[0] = 0,
-    has_aux: Literal[True] = True,
-) -> Callable[Concatenate[In, P], tuple[tuple[Out, Aux], In]]:
+    has_aux: bool = ...,
+) -> Callable[[In, *Ts], tuple[Out, In]]:
     ...
 
 
 @overload
 def value_and_grad(
-    fn: Callable[Concatenate[In, P], tuple[Out, Aux]],
-    argnums: Sequence[int],
-    has_aux: Literal[True] = True,
-) -> Callable[
-    Concatenate[In, P], tuple[tuple[Out, Aux], tuple[In, *tuple[jax.Array, ...]]]
-]:
+    fn: Callable[[In, In2, *Ts], Out],
+    argnums: tuple[Literal[0], Literal[1]],
+    has_aux: bool = ...,
+) -> Callable[[In, *Ts], tuple[Out, tuple[In, In2]]]:
     ...
 
 
+@overload
 def value_and_grad(
-    fn: Callable[Concatenate[In, P], tuple[Out, Aux]],
-    argnums: Literal[0] | Sequence[int] = 0,
-    has_aux: Literal[True] = True,
-) -> Callable[
-    Concatenate[In, P], tuple[tuple[Out, Aux], In | tuple[In, *tuple[jax.Array, ...]]]
-]:
+    fn: Callable[[In, In2, In3, *Ts], Out],
+    argnums: tuple[Literal[0], Literal[1], Literal[2]],
+    has_aux: bool = ...,
+) -> Callable[[In, *Ts], tuple[Out, tuple[In, In2, In3]]]:
+    ...
+
+
+@overload
+def value_and_grad(
+    fn: Callable[[In, *Ts], Out],
+    argnums: tuple[Literal[0], *tuple[int, ...]],
+    has_aux: bool = ...,
+) -> Callable[[In, *Ts], tuple[Out, tuple[In, *Ts]]]:
+    ...
+
+
+@overload
+def value_and_grad(
+    fn: Callable[[*Ts], Out],
+    argnums: Sequence[int],
+    has_aux: bool = ...,
+) -> Callable[[*Ts], tuple[*Ts]]:
+    ...
+
+
+def value_and_grad(  # type: ignore
+    fn: Callable[..., Out],
+    argnums: int | Sequence[int] = 0,
+    has_aux: bool = False,
+):
     """Small type hint fix for jax's `value_and_grad` (preserves the signature of the
     callable)."""
-    return jax.value_and_grad(fn, argnums=argnums, has_aux=has_aux)  # type: ignore
+    return jax.value_and_grad(fn, argnums=argnums, has_aux=has_aux)
 
 
 def chexify(

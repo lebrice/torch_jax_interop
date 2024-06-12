@@ -11,7 +11,7 @@ from pytest_benchmark.fixture import BenchmarkFixture
 from tensor_regression import TensorRegressionFixture
 
 from torch_jax_interop import jax_to_torch, torch_to_jax
-from torch_jax_interop.to_jax import torch_to_jax_nn_module
+from torch_jax_interop.to_jax import torch_module_to_jax
 from torch_jax_interop.to_torch import jax_to_torch_device
 from torch_jax_interop.types import jit, value_and_grad
 from torch_jax_interop.utils import log_once, to_channels_first
@@ -130,7 +130,7 @@ def test_torch_to_jax_nn_module(torch_device: torch.device):
     expected_torch_output.backward(gradient=torch.ones_like(expected_torch_output))
     expected_input_grad = torch_input.grad
 
-    jax_net_fn, jax_net_params = torch_to_jax_nn_module(torch_net)
+    jax_net_fn, jax_net_params = torch_module_to_jax(torch_net)
 
     for jax_param, torch_param in zip(jax_net_params, torch_params.values()):
         torch.testing.assert_close(jax_to_torch(jax_param), torch_param)
@@ -180,6 +180,22 @@ def test_torch_params_dont_change(
     )
 
 
+def test_benchmark_forward_pass(
+    torch_network: torch.nn.Module,
+    torch_input: torch.Tensor,
+    benchmark: BenchmarkFixture,
+    tensor_regression: TensorRegressionFixture,
+):
+    output = torch_network(torch_input)
+
+    jax_fn, params = torch_module_to_jax(torch_network, example_output=output)
+
+    tensor_regression.check(
+        {"output": output},
+        include_gpu_name_in_stats=False,
+    )
+
+
 @pytest.mark.parametrize("with_jit", [False, True])
 @pytest.mark.parametrize("input_needs_grad", [False, True])
 def test_use_torch_module_in_jax_graph(
@@ -208,7 +224,7 @@ def test_use_torch_module_in_jax_graph(
         example_out = torch_network(jax_to_torch(jax_input))
 
     flat_torch_params, params_treedef = jax.tree.flatten(torch_parameters)
-    wrapped_torch_network_fn, jax_params = torch_to_jax_nn_module(
+    wrapped_torch_network_fn, jax_params = torch_module_to_jax(
         torch_network, example_output=example_out
     )
 

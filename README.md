@@ -42,3 +42,96 @@ def some_torch_function(x: torch.Tensor) -> torch.Tensor:
 
 print(some_torch_function(some_jax_array))
 ```
+
+
+## Examples
+
+
+### Jax to Torch nn.Module
+
+Suppose we have some jax function we'd like to use in a PyTorch model:
+
+```python
+import jax
+import jax.numpy as jnp
+def some_jax_function(params: jax.Array, x: jax.Array):
+    '''Some toy function that takes in some parameters and an input vector.'''
+    return jnp.dot(x, params)
+```
+
+By importing this:
+
+```python
+from torch_jax_interop import WrappedJaxFunction
+```
+
+We can then wrap this jax function into a torch.nn.Module with learnable parameters:
+
+```python
+import torch
+import torch.nn
+module = WrappedJaxFunction(some_jax_function, jax.random.normal(jax.random.key(0), (2, 1)))
+module = module.to("cpu")  # jax arrays are on GPU by default, moving them to CPU for this example.
+```
+
+The parameters are now learnable parameters of the module parameters:
+
+```python
+dict(module.state_dict())
+{'params.0': tensor([[-0.7848],
+        [ 0.8564]])}
+```
+
+You can use this just like any other torch.nn.Module:
+
+```python
+x, y = torch.randn(2), torch.rand(1)
+output = module(x)
+loss = torch.nn.functional.mse_loss(output, y)
+loss.backward()
+
+model = torch.nn.Sequential(
+    torch.nn.Linear(123, 2),
+    module,
+)
+```
+
+
+# Torch to jax function
+
+
+
+```python
+>>> import torch
+>>> import jax
+>>> model = torch.nn.Linear(3, 2, device="cuda")
+>>> apply, params = torch_module_to_jax(model)
+>>> def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
+...     y_pred = apply(params, x)
+...     return jax.numpy.mean((y - y_pred) ** 2)
+>>> x = jax.random.uniform(key=jax.random.key(0), shape=(1, 3))
+>>> y = jax.random.uniform(key=jax.random.key(1), shape=(1, 1))
+>>> loss, grad = jax.value_and_grad(loss_function)(params, x, y)
+>>> loss
+Array(0.3944674, dtype=float32)
+>>> grad
+(Array([[-0.46541408, -0.15171866, -0.30520514],
+        [-0.7201077 , -0.23474531, -0.47222584]], dtype=float32), Array([-0.4821338, -0.7459771], dtype=float32))
+```
+
+To use `jax.jit` on the model, you need to pass an example of an output so we can
+tell the JIT compiler the output shapes and dtypes to expect:
+
+```python
+>>> # here we reuse the same model as before:
+>>> apply, params = torch_module_to_jax(model, example_output=torch.zeros(1, 2, device="cuda"))
+>>> def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
+...     y_pred = apply(params, x)
+...     return jax.numpy.mean((y - y_pred) ** 2)
+>>> loss, grad = jax.jit(jax.value_and_grad(loss_function))(params, x, y)
+>>> loss
+Array(0.3944674, dtype=float32)
+>>> grad
+(Array([[-0.46541408, -0.15171866, -0.30520514],
+        [-0.7201077 , -0.23474531, -0.47222584]], dtype=float32), Array([-0.4821338, -0.7459771], dtype=float32))
+```

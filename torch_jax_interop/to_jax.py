@@ -30,7 +30,6 @@ from .types import (
     Out_cov,
     P,
     TorchPyTree,
-    is_sequence_of,
 )
 from .utils import (
     log_once,
@@ -192,28 +191,6 @@ def torch_to_jax_callable(torch_callable: Callable) -> Callable:
     return _wrapped
 
 
-def torch_to_jax_nn_module(
-    model: torch.nn.Module, example_output: torch.Tensor | None = None
-) -> tuple[jax.custom_vjp[Any], tuple[jax.Array, ...]]:
-    """Wraps a torch nn.Module into a jax function and return the parameters."""
-    # Convert a Pytorch model to a jax function and parameters
-    # NOTE: Using our version below to avoid warnings and to play around with it a bit.
-    # jax_fn, jax_params = pytorch2jax.convert_pytnn_to_jax(model)
-    if example_output is not None:
-        example_out = jax.tree.map(torch_to_jax, example_output)
-    else:
-        example_out = None
-    jax_fn, jax_params = convert_pytorch_module_to_jax(
-        model, example_output=example_out
-    )
-    assert is_sequence_of(jax_params, jax.Array)
-    assert isinstance(jax_params, tuple)
-    return jax_fn, jax_params
-
-
-torch_to_jax.register(torch.nn.Module, torch_to_jax_nn_module)
-
-
 def make_functional(
     module_with_state: Module[P, Out_cov], disable_autograd_tracking=False
 ) -> tuple[
@@ -244,10 +221,9 @@ def make_functional(
     return fmodel, params_values
 
 
-def convert_pytorch_module_to_jax(
-    model: Module[P, Out_cov],
-    example_output: Out_cov | None = None,
-):
+def torch_module_to_jax(
+    model: Module[..., torch.Tensor], example_output: torch.Tensor | None = None
+) -> tuple[jax.custom_vjp[jax.Array], tuple[jax.Array, ...]]:
     """Wrap a pytorch model to be used in a jax computation.
 
     Copied and adapted from https://github.com/subho406/pytorch2jax/blob/main/pytorch2jax/pytorch2jax.py#L32
@@ -263,7 +239,44 @@ def convert_pytorch_module_to_jax(
     Returns
     -------
     the functional model and the model parameters (converted to jax arrays).
+
+    ## Example
+
+    >>> import torch
+    >>> import jax
+    >>> model = torch.nn.Linear(3, 2, device="cuda")
+    >>> apply, params = torch_module_to_jax(model)
+    >>> def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
+    ...     y_pred = apply(params, x)
+    ...     return jax.numpy.mean((y - y_pred) ** 2)
+    >>> x = jax.random.uniform(key=jax.random.key(0), shape=(1, 3))
+    >>> y = jax.random.uniform(key=jax.random.key(1), shape=(1, 1))
+    >>> loss, grad = jax.value_and_grad(loss_function)(params, x, y)
+    >>> loss
+    Array(0.3944674, dtype=float32)
+    >>> grad
+    (Array([[-0.46541408, -0.15171866, -0.30520514],
+           [-0.7201077 , -0.23474531, -0.47222584]], dtype=float32), Array([-0.4821338, -0.7459771], dtype=float32))
+
+    To use `jax.jit` on the model, you need to pass an example of an output so we can
+    tell the JIT compiler the output shapes and dtypes to expect:
+
+    >>> # here we reuse the same model as before:
+    >>> apply, params = torch_module_to_jax(model, example_output=torch.zeros(1, 2, device="cuda"))
+    >>> def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
+    ...     y_pred = apply(params, x)
+    ...     return jax.numpy.mean((y - y_pred) ** 2)
+    >>> loss, grad = jax.jit(jax.value_and_grad(loss_function))(params, x, y)
+    >>> loss
+    Array(0.3944674, dtype=float32)
+    >>> grad
+    (Array([[-0.46541408, -0.15171866, -0.30520514],
+           [-0.7201077 , -0.23474531, -0.47222584]], dtype=float32), Array([-0.4821338, -0.7459771], dtype=float32))
     """
+
+    if example_output is not None:
+        example_output = jax.tree.map(torch_to_jax, example_output)
+
     from .to_torch import jax_to_torch
 
     def j2t(v: JaxPyTree) -> TorchPyTree:
@@ -305,29 +318,31 @@ def convert_pytorch_module_to_jax(
             args = j2t(args)
             kwargs = j2t(kwargs)
             out = model_fn(params, *args, **kwargs)
-        else:
-            result_shape_dtypes = t2j(example_output)
+            # Convert the output data from JAX to PyTorch
+            out = t2j(out)
+            return out
 
-            # idea: use `torch.compile` as the equivalent of jax's `.jit`?
-            jitted_model_fn = torch.compile(model_fn)
+        result_shape_dtypes = t2j(example_output)
+        # idea: use `torch.compile` as the equivalent of jax's `.jit`?
+        jitted_model_fn = torch.compile(model_fn)
 
-            def pytorch_model_callback(params, *args, **kwargs):
-                params = jax.tree.map(jax_to_torch, params)
-                args = jax.tree.map(jax_to_torch, args)
-                kwargs = jax.tree.map(jax_to_torch, kwargs)
-                out = jitted_model_fn(params, *args, **kwargs)
-                return jax.tree.map(torch_to_jax, out)
+        def pytorch_model_callback(params, *args, **kwargs):
+            params = jax.tree.map(jax_to_torch, params)
+            args = jax.tree.map(jax_to_torch, args)
+            kwargs = jax.tree.map(jax_to_torch, kwargs)
+            out = jitted_model_fn(params, *args, **kwargs)
+            return jax.tree.map(torch_to_jax, out)
 
-            # Pass the jax params to the model function in this case, because
-            # jax.pure_callback tries to extract the dtypes of the args.
-            out = jax.pure_callback(
-                pytorch_model_callback,
-                result_shape_dtypes,
-                params,
-                *args,
-                **kwargs,
-                vectorized=True,
-            )
+        # Pass the jax params to the model function in this case, because
+        # jax.pure_callback tries to extract the dtypes of the args.
+        out = jax.pure_callback(
+            pytorch_model_callback,
+            result_shape_dtypes,
+            params,
+            *args,
+            **kwargs,
+            vectorized=True,
+        )
         # Convert the output data from JAX to PyTorch representations
         out = t2j(out)
         return out
@@ -338,12 +353,12 @@ def convert_pytorch_module_to_jax(
 
     def apply_bwd(res, grads: jax.Array):
         params, args, kwargs = res
-        # Convert the input data and gradients from PyTorch to JAX representations
+        # Convert the input data and gradients from PyTorch to JAX
 
         if isinstance(grads, jax.core.Tracer):
             jitted_model_fn = torch.compile(model_fn)
 
-            # Compute the gradients using the model function and convert them from JAX to PyTorch representations
+            # Compute the gradients using the model function and convert them from JAX to PyTorch
             def _pytorch_model_backward_callback(params, grads, *args, **kwargs):
                 torch_params = jax.tree.map(jax_to_torch, params)
                 torch_args = jax.tree.map(jax_to_torch, args)
@@ -367,19 +382,23 @@ def convert_pytorch_module_to_jax(
                 vectorized=True,
             )
             in_grads = t2j(in_grads)
-        else:
-            torch_params = jax.tree.map(jax_to_torch, params)
-            torch_args = jax.tree.map(jax_to_torch, args)
-            torch_kwargs = jax.tree.map(jax_to_torch, kwargs)
-            torch_grads = jax.tree.map(jax_to_torch, grads)
-            _torch_out, torch_jvp_fn = torch.func.vjp(
-                model_fn, torch_params, *torch_args, **torch_kwargs
-            )
-            torch_in_grads = torch_jvp_fn(torch_grads)
-            in_grads = jax.tree.map(torch_to_jax, torch_in_grads)
+            return in_grads
+        # not JITed
+        torch_params = jax.tree.map(jax_to_torch, params)
+        torch_args = jax.tree.map(jax_to_torch, args)
+        torch_kwargs = jax.tree.map(jax_to_torch, kwargs)
+        torch_grads = jax.tree.map(jax_to_torch, grads)
+        _torch_out, torch_jvp_fn = torch.func.vjp(
+            model_fn, torch_params, *torch_args, **torch_kwargs
+        )
+        torch_in_grads = torch_jvp_fn(torch_grads)
+        in_grads = jax.tree.map(torch_to_jax, torch_in_grads)
         return in_grads
 
     apply.defvjp(apply_fwd, apply_bwd)
 
     # Return the apply function and the converted model parameters
     return apply, jax_model_params
+
+
+torch_to_jax.register(torch.nn.Module, torch_module_to_jax)

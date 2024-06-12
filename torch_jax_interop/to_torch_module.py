@@ -101,7 +101,7 @@ class WrappedJaxFunction(torch.nn.Module):
         jax_function: Callable[[Params, *tuple[jax.Array, ...]], jax.Array]
         | Callable[[Params, *tuple[jax.Array, ...]], tuple[jax.Array, JaxPyTree]],
         jax_params: Params,
-        has_aux: bool = True,
+        has_aux: bool = ...,
         clone_params: bool = False,
     ):
         ...

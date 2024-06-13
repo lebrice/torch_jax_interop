@@ -96,6 +96,30 @@ model = torch.nn.Sequential(
 )
 ```
 
+Same goes for `flax.linen.Module`s, you can now use them in your torch forward / backward pass:
+
+```python
+import flax.linen
+
+class Classifier(flax.linen.Module):
+    num_classes: int = 10
+
+    @flax.linen.compact
+    def __call__(self, x: jax.Array):
+        x = x.reshape((x.shape[0], -1))  # flatten
+        x = flax.linen.Dense(features=256)(x)
+        x = flax.linen.relu(x)
+        x = flax.linen.Dense(features=self.num_classes)(x)
+        return x
+
+jax_module = Classifier(num_classes=10)
+jax_params = jax_module.init(jax.random.key(0), x)
+
+from torch_jax_interop import WrappedJaxFunction
+
+torch_module = WrappedJaxFunction(jax.jit(jax_module.apply), jax_params)
+```
+
 
 ### Torch nn.Module to jax function
 

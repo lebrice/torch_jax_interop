@@ -1,13 +1,26 @@
 # Torch <-> Jax Interop Utilities
 
-Simple utility functions to simplify interoperability between jax and torch
+Hey you! Yes, you!
 
-See also: https://github.com/subho406/pytorch2jax which is very similar. We actually use some
-of their code to convert nn.Modules to a jax function, although we don't currently have any real tests for this feature at the moment.
+- Do you use PyTorch, and would you like to start using Jax by progressively incorporating it into your codebase?
+- Would you like to avoid the pain of rewriting a model from an existing PyTorch codebase in Jax (and vice-versa)?
+- Do you like PyTorch frameworks like [PyTorch-Lightning](https://lightning.ai/docs/pytorch/stable/), and would you like to keep using them with Jax?
 
+**Well do I have some good news for you!**
+You can have it all: Sweet, sweet jit-ed functions and automatic differentiation from Jax, as well as mature, widely-used frameworks from the PyTorch software ecosystem.
+
+## Package Description
+
+This package contains a few utility functions to simplify interoperability between jax and torch: `torch_to_jax`, `jax_to_torch`, `WrappedJaxFunction`, `torch_module_to_jax`.
 
 This repository contains utilities for converting PyTorch Tensors to JAX arrays and vice versa.
-This conversion happens thanks the `dlpack` format, which is a common format for exchanging tensors between different deep learning frameworks. Crucially, this format allows for zero-copy tensor sharing between PyTorch and JAX.
+This conversion happens thanks the `dlpack` format, which is a common format for exchanging tensors between different deep learning frameworks. Crucially, this format allows for zero-copy \* tensor sharing between PyTorch and JAX.
+
+
+See also: https://github.com/subho406/pytorch2jax, which is very similar. The way we convert `torch.nn.Module`s to `jax.custom_vjp` is actually based on their implementation, with some additions (support for jitting, along with more flexible input/output signatures).
+
+> \* Note: For some torch tensors with specific memory layouts, for example channels-first image tensors, Jax will refuse to read the array from the dlpack, so we flatten and unflatten the data when converting, which might involve a copy.This is displayed as a warning at the moment on the command-line.
+
 
 ## Installation
 ```bash
@@ -20,21 +33,36 @@ pip install torch-jax-interop
 import torch
 import jax.numpy as jnp
 from torch_jax_interop import jax_to_torch, torch_to_jax
+```
 
+Converting `torch.Tensor`s into `jax.Array`s:
+```python
+import jax
+import torch
+
+tensors = {
+    "x": torch.randn(5),
+    "y": torch.arange(5),
+}
+
+jax_arrays = jax.tree.map(torch_to_jax, tensors)
+print(jax_arrays)
+```
+
+
+Passing torch.Tensors to a Jax function:  
+```python
 @torch_to_jax
 def some_jax_function(x: jnp.ndarray) -> jnp.ndarray:
     return x + jnp.ones_like(x)
 
-torch_device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+torch_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 some_torch_tensor = torch.arange(5, device=device)
+
+torch_output = some_jax_function(some_torch_tensor)
+
+
 some_jax_array = jnp.arange(5)
-
-assert (jax_to_torch(some_jax_array) == some_torch_array).all()
-assert (torch_to_jax(some_torch_array) == some_jax_array).all()
-
-
-print(some_jax_function(some_torch_tensor))
-
 
 @jax_to_torch
 def some_torch_function(x: torch.Tensor) -> torch.Tensor:
@@ -127,13 +155,19 @@ torch_module = WrappedJaxFunction(jax.jit(jax_module.apply), jax_params)
 ```python
 >>> import torch
 >>> import jax
+
 >>> model = torch.nn.Linear(3, 2, device="cuda")
->>> apply, params = torch_module_to_jax(model)
+>>> apply_fn, params = torch_module_to_jax(model)
+
+
 >>> def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
-...     y_pred = apply(params, x)
+...     y_pred = apply_fn(params, x)
 ...     return jax.numpy.mean((y - y_pred) ** 2)
+
+
 >>> x = jax.random.uniform(key=jax.random.key(0), shape=(1, 3))
 >>> y = jax.random.uniform(key=jax.random.key(1), shape=(1, 1))
+
 >>> loss, grad = jax.value_and_grad(loss_function)(params, x, y)
 >>> loss
 Array(0.3944674, dtype=float32)

@@ -16,15 +16,22 @@ This repository contains utilities for converting PyTorch Tensors to JAX arrays 
 This conversion happens thanks the `dlpack` format, which is a common format for exchanging tensors between different deep learning frameworks. Crucially, this format allows for zero-copy \* tensor sharing between PyTorch and JAX.
 
 
-See also: https://github.com/subho406/pytorch2jax, which is very similar. The way we convert `torch.nn.Module`s to `jax.custom_vjp` is actually based on their implementation, with some additions (support for jitting, along with more flexible input/output signatures).
-
 > \* Note: For some torch tensors with specific memory layouts, for example channels-first image tensors, Jax will refuse to read the array from the dlpack, so we flatten and unflatten the data when converting, which might involve a copy.This is displayed as a warning at the moment on the command-line.
+
 
 
 ## Installation
 ```bash
 pip install torch-jax-interop
 ```
+
+## Comparable projects
+
+- https://github.com/lucidrains/jax2torch: Seems to be the first minimal prototype for something like this. Supports jax2torch for functions, but not the other way around.
+- https://github.com/subho406/pytorch2jax: Very similar. The way we convert `torch.nn.Module`s to `jax.custom_vjp` is actually based on their implementation, with some additions (support for jitting, along with more flexible input/output signatures).
+- https://github.com/samuela/torch2jax: Takes a different approach: using a `torch.Tensor` subclass and `__torch_fuction__`.
+- https://github.com/rdyro/torch2jax: Just found this, seems to have very good support for the torch to jax conversion, but not the other way around. Has additional features like specifying the depth (levels of derivatives).
+
 
 ## Usage
 

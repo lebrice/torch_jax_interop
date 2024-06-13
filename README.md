@@ -1,15 +1,14 @@
 # Torch <-> Jax Interop Utilities
 
-Hey you! Yes, you!
+Hey, you there!
+- Do you use (PyTorch/Jax)? Are you curious about (Jax/PyTorch), and would like to start using it in your codebase progressively, instead of having to start over from scratch?
+- Want to avoid the pain of rewriting a model from an existing PyTorch codebase in Jax (or vice-versa)?
+- Do you like the performance benefits of Jax, but aren't prepared to sacrifice your nice PyTorch software frameworks (e.g. [Lightning](https://lightning.ai/docs/pytorch/stable/))?
 
-- Do you use PyTorch, and would you like to start using Jax by progressively incorporating it into your codebase?
-- Would you like to avoid the pain of rewriting a model from an existing PyTorch codebase in Jax (and vice-versa)?
-- Do you like PyTorch frameworks like [PyTorch-Lightning](https://lightning.ai/docs/pytorch/stable/), and would you like to keep using them with Jax?
-
-**Well do I have some good news for you!**
+**Well I have some good news for you!**
 You can have it all: Sweet, sweet jit-ed functions and automatic differentiation from Jax, as well as mature, widely-used frameworks from the PyTorch software ecosystem.
 
-## Package Description
+## What this does
 
 This package contains a few utility functions to simplify interoperability between jax and torch: `torch_to_jax`, `jax_to_torch`, `WrappedJaxFunction`, `torch_module_to_jax`.
 
@@ -50,7 +49,7 @@ print(jax_arrays)
 ```
 
 
-Passing torch.Tensors to a Jax function:  
+Passing torch.Tensors to a Jax function:
 ```python
 @torch_to_jax
 def some_jax_function(x: jnp.ndarray) -> jnp.ndarray:

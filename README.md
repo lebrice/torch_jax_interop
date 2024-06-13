@@ -1,7 +1,7 @@
 # Torch <-> Jax Interop Utilities
 
 Hey, you there!
-- Do you use PyTorch, but are curious about Jax (or vice-versa)? Would you prefer to start adding some (Jax/PyTorch) progressively in your existing projects, rather than having to start over from scratch?
+- Do you use PyTorch, but are curious about Jax (or vice-versa)? Would you prefer to start adding some (Jax/PyTorch) progressively into your projects rather than to start from scratch?
 - Want to avoid the pain of rewriting a model from an existing PyTorch codebase in Jax (or vice-versa)?
 - Do you like the performance benefits of Jax, but aren't prepared to sacrifice your nice PyTorch software frameworks (e.g. [Lightning](https://lightning.ai/docs/pytorch/stable/))?
 

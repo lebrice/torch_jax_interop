@@ -32,27 +32,33 @@ logger = get_logger(__name__)
 
 
 @overload
-def torch_to_jax(value: torch.Tensor, /) -> jax.Array: ...
+def torch_to_jax(value: torch.Tensor, /) -> jax.Array:
+    ...
 
 
 @overload
-def torch_to_jax(value: torch.device, /) -> jax.Device: ...
+def torch_to_jax(value: torch.device, /) -> jax.Device:
+    ...
 
 
 @overload
-def torch_to_jax(value: tuple[torch.Tensor, ...], /) -> tuple[jax.Array, ...]: ...
+def torch_to_jax(value: tuple[torch.Tensor, ...], /) -> tuple[jax.Array, ...]:
+    ...
 
 
 @overload
-def torch_to_jax(value: list[torch.Tensor], /) -> list[jax.Array]: ...
+def torch_to_jax(value: list[torch.Tensor], /) -> list[jax.Array]:
+    ...
 
 
 @overload
-def torch_to_jax(value: NestedDict[K, torch.Tensor], /) -> NestedDict[K, jax.Array]: ...
+def torch_to_jax(value: NestedDict[K, torch.Tensor], /) -> NestedDict[K, jax.Array]:
+    ...
 
 
 @overload
-def torch_to_jax(value: Any, /) -> Any: ...
+def torch_to_jax(value: Any, /) -> Any:
+    ...
 
 
 def torch_to_jax(value: Any, /) -> Any:

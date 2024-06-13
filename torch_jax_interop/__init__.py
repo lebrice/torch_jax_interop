@@ -1,5 +1,4 @@
-"""Tools to help inter-operability between PyTorch and Jax code.
-
+"""Tools to help interoperability between PyTorch and Jax code.
 
 ## Examples
 

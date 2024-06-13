@@ -97,8 +97,7 @@ model = torch.nn.Sequential(
 ```
 
 
-# Torch to jax function
-
+### Torch nn.Module to jax function
 
 
 ```python

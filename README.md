@@ -52,7 +52,7 @@ tensors = {
 }
 
 jax_arrays = jax.tree.map(torch_to_jax, tensors)
-print(jax_arrays)
+torch_tensors = jax.tree.map(jax_to_torch, jax_arrays)
 ```
 
 

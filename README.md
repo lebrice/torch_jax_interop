@@ -58,7 +58,7 @@ torch_tensors = jax.tree.map(jax_to_torch, jax_arrays)
 
 Passing torch.Tensors to a Jax function:
 ```python
-@torch_to_jax
+@jax_to_torch
 def some_jax_function(x: jnp.ndarray) -> jnp.ndarray:
     return x + jnp.ones_like(x)
 
@@ -70,7 +70,7 @@ torch_output = some_jax_function(some_torch_tensor)
 
 some_jax_array = jnp.arange(5)
 
-@jax_to_torch
+@torch_to_jax
 def some_torch_function(x: torch.Tensor) -> torch.Tensor:
     return x + torch.ones_like(x)
 

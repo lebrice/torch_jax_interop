@@ -9,7 +9,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 jax = {extras = ["cuda12"], version = "^0.4.28"}
-torch = "^2.3.0"
+torch = "^2.0.0"
 pytorch2jax = "^0.1.0"
 flax = "^0.8.4"
 

@@ -73,7 +73,12 @@ jax_to_torch = functools.singledispatch(jax_to_torch)  # type: ignore
 
 
 # Keep `None`s the same.
-@jax_to_torch.register(None | int | float | str | bool | bytes)
+@jax_to_torch.register(type(None))
+@jax_to_torch.register(int)
+@jax_to_torch.register(float)
+@jax_to_torch.register(str)
+@jax_to_torch.register(bool)
+@jax_to_torch.register(bytes)
 def no_op(v: Any) -> Any:
     return v
 

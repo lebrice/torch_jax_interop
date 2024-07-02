@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import dataclasses
 import functools
 import typing
@@ -13,7 +15,6 @@ from typing import (
     Sequence,
     TypeGuard,
     TypeVar,
-    TypeVarTuple,
     overload,
     runtime_checkable,
 )
@@ -23,6 +24,7 @@ import jax
 import jax.experimental
 import jax.experimental.checkify
 import torch
+from typing_extensions import TypeVarTuple, Unpack
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -185,18 +187,18 @@ def value_and_grad(
 @overload
 def value_and_grad(
     fn: Callable[[In, *Ts], Out],
-    argnums: tuple[Literal[0], *tuple[int, ...]],
+    argnums: tuple[Literal[0], Unpack[tuple[int, ...]]],
     has_aux: bool = ...,
-) -> Callable[[In, *Ts], tuple[Out, tuple[In, *Ts]]]:
+) -> Callable[[In, Unpack[Ts]], tuple[Out, tuple[In, Unpack[Ts]]]]:
     ...
 
 
 @overload
 def value_and_grad(
-    fn: Callable[[*Ts], Out],
+    fn: Callable[[Unpack[Ts]], Out],
     argnums: Sequence[int],
     has_aux: bool = ...,
-) -> Callable[[*Ts], tuple[*Ts]]:
+) -> Callable[[*Ts], tuple[Unpack[Ts]]]:
     ...
 
 

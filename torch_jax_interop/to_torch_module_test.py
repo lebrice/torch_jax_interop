@@ -18,6 +18,9 @@ from torch_jax_interop.to_torch_module import (
 )
 from torch_jax_interop.types import jit
 
+# TODO: The regression check in this test occasionally fails? Unable to precisely
+# replicate it yet.
+
 
 @pytest.mark.parametrize("clone_params", [False, True], ids="clone_params={}".format)
 @pytest.mark.parametrize("use_jit", [False, True], ids="jit={}".format)

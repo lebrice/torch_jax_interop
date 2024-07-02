@@ -20,6 +20,8 @@ from torch_jax_interop.types import jit
 
 # TODO: The regression check in this test occasionally fails? Unable to precisely
 # replicate it yet.
+# This test case seems to fail occasionally:
+# - `input_grad` tensor differs in this case: [backend=cuda-JaxFcNet-input_requires_grad=True-aux=True-jit=False-clone_params=False]
 
 
 @pytest.mark.parametrize("clone_params", [False, True], ids="clone_params={}".format)

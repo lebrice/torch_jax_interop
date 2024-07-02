@@ -83,7 +83,12 @@ def torch_to_jax(value: Any, /) -> Any:
 torch_to_jax = functools.singledispatch(torch_to_jax)  # type: ignore
 
 
-@torch_to_jax.register(None | int | float | str | bool | bytes)
+@torch_to_jax.register(type(None))
+@torch_to_jax.register(int)
+@torch_to_jax.register(float)
+@torch_to_jax.register(str)
+@torch_to_jax.register(bool)
+@torch_to_jax.register(bytes)
 def no_op(v: Any) -> Any:
     return v
 

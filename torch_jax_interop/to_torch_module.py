@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import operator
 import typing
@@ -8,6 +10,7 @@ import chex
 import jax
 import torch
 from chex import PyTreeDef
+from typing_extensions import Unpack
 
 from torch_jax_interop.types import (
     In,
@@ -236,7 +239,7 @@ class WrappedJaxScalarFunction(WrappedJaxFunction):
                 tuple[
                     jax.Array | tuple[jax.Array, JaxPyTree],  # returns the output value
                     # and gradients of either just params or params and inputs:
-                    Params | tuple[Params, *tuple[jax.Array, ...]],
+                    Params | tuple[Params, Unpack[tuple[jax.Array, ...]]],
                 ],
             ],
         ] = {}
@@ -386,7 +389,7 @@ class _JaxFunction(torch.autograd.Function, Generic[Params]):
     @staticmethod
     def backward(
         ctx: torch.autograd.function.NestedIOFunction,
-        *output_grads: *tuple[torch.Tensor, *tuple[None, ...]],
+        *output_grads: Unpack[tuple[torch.Tensor, Unpack[tuple[None, ...]]]],
     ):
         from .to_jax import torch_to_jax
 
@@ -510,11 +513,13 @@ class _JaxScalarFunction(torch.autograd.Function, Generic[Params]):
             [Params, *tuple[jax.Array, ...]], tuple[chex.Scalar, Aux]
         ],
         jax_value_and_grad_function: Callable[
-            [Params, *tuple[jax.Array, ...]],
+            [Params, Unpack[tuple[jax.Array, ...]]],
             tuple[
                 tuple[chex.Scalar, Aux],  # outputs
                 Params  # grads of params only
-                | tuple[Params, *tuple[jax.Array, ...]],  # grads of params and inputs
+                | tuple[
+                    Params, Unpack[tuple[jax.Array, ...]]
+                ],  # grads of params and inputs
             ],
         ],
         inputs_treedef: PyTreeDef,

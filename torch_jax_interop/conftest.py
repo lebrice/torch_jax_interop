@@ -196,7 +196,10 @@ def torch_network(
     torch_device: torch.device,
 ):
     torch_network_type: type[torch.nn.Module] = request.param
-    with torch_device, torch.random.fork_rng([torch_device]):
+
+    with torch_device, torch.random.fork_rng(
+        [torch_device] if torch_device.type == "cuda" else []
+    ):
         torch_network = torch_network_type(num_classes=num_classes)
         # initialize any un-initialized parameters in the network by doing a forward pass
         # with a dummy input.

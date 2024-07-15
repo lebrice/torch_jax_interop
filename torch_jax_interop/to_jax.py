@@ -34,33 +34,27 @@ logger = get_logger(__name__)
 
 
 @overload
-def torch_to_jax(value: torch.Tensor, /) -> jax.Array:
-    ...
+def torch_to_jax(value: torch.Tensor, /) -> jax.Array: ...
 
 
 @overload
-def torch_to_jax(value: torch.device, /) -> jax.Device:
-    ...
+def torch_to_jax(value: torch.device, /) -> jax.Device: ...
 
 
 @overload
-def torch_to_jax(value: tuple[torch.Tensor, ...], /) -> tuple[jax.Array, ...]:
-    ...
+def torch_to_jax(value: tuple[torch.Tensor, ...], /) -> tuple[jax.Array, ...]: ...
 
 
 @overload
-def torch_to_jax(value: list[torch.Tensor], /) -> list[jax.Array]:
-    ...
+def torch_to_jax(value: list[torch.Tensor], /) -> list[jax.Array]: ...
 
 
 @overload
-def torch_to_jax(value: NestedDict[K, torch.Tensor], /) -> NestedDict[K, jax.Array]:
-    ...
+def torch_to_jax(value: NestedDict[K, torch.Tensor], /) -> NestedDict[K, jax.Array]: ...
 
 
 @overload
-def torch_to_jax(value: Any, /) -> Any:
-    ...
+def torch_to_jax(value: Any, /) -> Any: ...
 
 
 def torch_to_jax(value: Any, /) -> Any:
@@ -99,9 +93,7 @@ def _direct_conversion(v: torch.Tensor) -> jax.Array:
     return jax_from_dlpack(v, copy=False)
 
 
-def _to_from_dlpack(
-    v: torch.Tensor, ignore_deprecation_warning: bool = True
-) -> jax.Array:
+def _to_from_dlpack(v: torch.Tensor, ignore_deprecation_warning: bool = True) -> jax.Array:
     with warnings.catch_warnings() if ignore_deprecation_warning else contextlib.nullcontext():
         # Only way to get this to work for CPU seems to be with to/from dlpack... so we have to use this deprecated
         # conversion method for now.

@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - run: pip install pre-commit
@@ -44,15 +44,16 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
     steps:
     - uses: actions/checkout@v4
+    - name: Install poetry
+      run: pipx install poetry
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: "poetry"
-    - run: pip install poetry
     - name: Install dependencies
       run: poetry install
-    - name: Test with pytest (CPU)
+    - name: Run tests (CPU)
       env:
         JAX_PLATFORMS: cpu
       run: poetry run pytest -v --cov=project --cov-report=xml --cov-append

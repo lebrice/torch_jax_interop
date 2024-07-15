@@ -102,6 +102,7 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
     - [ ] Try to fix some of the issues related to the dimension layout (channels_first vs channels_last?)
     """
     value = value.detach()
+
     try:
         return jax_from_dlpack(
             value, device=torch_to_jax_device(value.device), copy=None

@@ -36,9 +36,7 @@ addopts = ["--doctest-modules"]
 [tool.pytest_env]
 CUBLAS_WORKSPACE_CONFIG = ":4096:8"
 
-[tool.ruff]
 line-length = 99
-
 [tool.docformatter]
 wrap-summaries = 99
 wrap-descriptions = 99

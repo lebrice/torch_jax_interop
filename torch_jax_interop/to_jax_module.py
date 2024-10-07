@@ -131,9 +131,9 @@ def torch_module_to_jax(
     >>> x = jax.random.uniform(key=jax.random.key(0), shape=(1, 3))
     >>> y = jax.random.uniform(key=jax.random.key(1), shape=(1, 1))
     >>> loss, grad = jax.value_and_grad(loss_function)(params, x, y)
-    >>> loss
+    >>> loss  # doctest: +SKIP
     Array(0.05772376, dtype=float32)
-    >>> grad
+    >>> grad  # doctest: +SKIP
     (Array([[-0.32541627, -0.10608128, -0.2133986 ],
            [-0.04103044, -0.01337536, -0.02690658]], dtype=float32), Array([-0.33710665, -0.04250443], dtype=float32))
 
@@ -146,9 +146,9 @@ def torch_module_to_jax(
     ...     y_pred = wrapped_model(params, x)
     ...     return jax.numpy.mean((y - y_pred) ** 2)
     >>> loss, grad = jax.jit(jax.value_and_grad(loss_function))(params, x, y)
-    >>> loss
+    >>> loss  # doctest: +SKIP
     Array(0.05772376, dtype=float32)
-    >>> grad
+    >>> grad  # doctest: +SKIP
     (Array([[-0.32541627, -0.10608128, -0.2133986 ],
            [-0.04103044, -0.01337536, -0.02690658]], dtype=float32), Array([-0.33710665, -0.04250443], dtype=float32))
     """

@@ -66,8 +66,7 @@ Out_cov = TypeVar("Out_cov", covariant=True)
 
 @runtime_checkable
 class Module(Protocol[P, Out_cov]):
-    """Procotol for a torch.nn.Module that gives better type hints for the `__call__`
-    method."""
+    """Protocol for a torch.nn.Module that gives better type hints for the `__call__` method."""
 
     def forward(self, *args: P.args, **kwargs: P.kwargs) -> Out_cov:
         raise NotImplementedError
@@ -112,8 +111,8 @@ class _DataclassMeta(type):
 class Dataclass(metaclass=_DataclassMeta):
     """A class which is used to check if a given object is a dataclass.
 
-    This plays nicely with @functools.singledispatch, allowing us to register functions
-    to be used for dataclass inputs.
+    This plays nicely with @functools.singledispatch, allowing us to register functions to be used
+    for dataclass inputs.
     """
 
 
@@ -128,8 +127,8 @@ DataclassType = TypeVar("DataclassType", bound=DataclassInstance)
 def is_sequence_of(
     object: Any, item_type: type[V] | tuple[type[V], ...]
 ) -> TypeGuard[Sequence[V]]:
-    """Used to check (and tell the type checker) that `object` is a sequence of items of
-    type `V`."""
+    """Used to check (and tell the type checker) that `object` is a sequence of items of type
+    `V`."""
     try:
         return all(isinstance(value, item_type) for value in object)
     except TypeError:
@@ -139,8 +138,7 @@ def is_sequence_of(
 def is_list_of(
     object: Any, item_type: type[V] | tuple[type[V], ...]
 ) -> TypeGuard[list[V]]:
-    """Used to check (and tell the type checker) that `object` is a list of items of
-    this type."""
+    """Used to check (and tell the type checker) that `object` is a list of items of this type."""
     return isinstance(object, list) and is_sequence_of(object, item_type)
 
 
@@ -207,8 +205,7 @@ def value_and_grad(  # type: ignore
     argnums: int | Sequence[int] = 0,
     has_aux: bool = False,
 ):
-    """Small type hint fix for jax's `value_and_grad` (preserves the signature of the
-    callable)."""
+    """Small type hint fix for jax's `value_and_grad` (preserves the signature of the callable)."""
     return jax.value_and_grad(fn, argnums=argnums, has_aux=has_aux)
 
 

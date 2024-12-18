@@ -29,12 +29,10 @@ def make_functional(
 ) -> tuple[
     Callable[Concatenate[Iterable[torch.Tensor], P], Out_cov], tuple[torch.Tensor, ...]
 ]:
-    """Backward compatibility equivalent for `functorch.make_functional` in the new
-    torch.func API.
+    """Backward compatibility equivalent for `functorch.make_functional` in the new torch.func API.
 
-    Adapted from https://gist.github.com/zou3519/7769506acc899d83ef1464e28f22e6cf as
-    suggested by https://pytorch.org/docs/master/func.migrating.html#functorch-make-
-    functional
+    Adapted from https://gist.github.com/zou3519/7769506acc899d83ef1464e28f22e6cf as suggested by
+    this: https://pytorch.org/docs/master/func.migrating.html#functorch-make-functional
     """
     params_dict = dict(module_with_state.named_parameters())
     param_names = params_dict.keys()

@@ -1,16 +1,13 @@
 [project]
 name = "torch_jax_interop"
 version = "0.0.1"
-description = "Add your description here"
+description = "Simple tools to mix and match PyTorch and Jax - Get the best of both worlds!"
 readme = "README.md"
 authors = [
     { name = "Fabrice Normandin", email = "fabrice.normandin@gmail.com" },
 ]
 requires-python = ">=3.12"
-dependencies = [
-    "jax>=0.4.38",
-    "torch>=2.5.1",
-]
+dependencies = ["jax[cpu]>=0.4.28", "torch>=2.5.1"]
 
 
 [dependency-groups]
@@ -23,7 +20,8 @@ dev = [
     "tensor-regression>=0.0.8",
     "mktestdocs>=0.2.4",
     "pytest-benchmark>=5.1.0",
-    "jax[cuda12]>=0.4.38",
+    "jax[cuda12]>=0.4.28",
+    "pytest-env>=1.1.5",
 ]
 
 [tool.pytest.ini_options]
@@ -31,6 +29,8 @@ testpaths = ["torch_jax_interop"]
 norecursedirs = [".venv"]
 addopts = ["--doctest-modules"]
 
+[tool.pytest_env]
+CUBLAS_WORKSPACE_CONFIG = ":4096:8"
 
 [build-system]
 requires = ["hatchling"]

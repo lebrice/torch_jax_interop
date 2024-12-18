@@ -71,7 +71,7 @@ def test_use_torch_module_in_jax_graph(
     #     )
     # )
 
-    with torch.random.fork_rng([torch_device]):
+    with torch.random.fork_rng([torch_device] if torch_device.type == "cuda" else []):
         # Pass the example output so the fn can be jitted!
         example_out = torch_network(jax_to_torch(jax_input))
 

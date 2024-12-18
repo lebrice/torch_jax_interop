@@ -15,7 +15,7 @@ import torch
 import torch.func
 import torch.utils._pytree
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
-from torch.utils.dlpack import to_dlpack as torch_to_dlpack
+from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 
 from .types import (
     Dataclass,
@@ -97,14 +97,15 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
     """Converts a PyTorch Tensor into a jax.Array.
 
     NOTE: seems like torch.float64 tensors are implicitly converted to jax.float32 tensors?
-
-    TODOs:
-    - [ ] Try to fix some of the issues related to the dimension layout (channels_first vs channels_last?)
     """
     value = value.detach()
+
     try:
-        dlpack = torch_to_dlpack(value)
-        return jax_from_dlpack(dlpack, copy=False)
+        # If the tensor is on the GPU, then we can use this direct conversion. Otherwise we have to convert
+        # to/from dlpack.
+        if value.device.type != "cpu":
+            return jax_from_dlpack(value, copy=False)
+        return jax_from_dlpack(torch_to_dlpack(value), copy=False)
     except jaxlib.xla_extension.XlaRuntimeError as err:
         log_once(
             logger,
@@ -119,8 +120,7 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
     # NOTE: This may or may not involve making a copy of the tensor.
     # See https://pytorch.org/docs/stable/generated/torch.flatten.html#torch.flatten
     flattened_value = value.flatten()
-    dlpack = torch_to_dlpack(flattened_value)
-    array: jax.Array = jax_from_dlpack(dlpack, copy=False)
+    array: jax.Array = jax_from_dlpack(flattened_value, copy=False)
     array = array.reshape(value.shape)
     return array
 

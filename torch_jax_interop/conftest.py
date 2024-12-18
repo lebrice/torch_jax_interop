@@ -24,8 +24,7 @@ DEFAULT_SEED = 123
 
 @pytest.fixture(autouse=True)
 def seed(request: pytest.FixtureRequest):
-    """Fixture that seeds everything for reproducibility and yields the random seed
-    used."""
+    """Fixture that seeds everything for reproducibility and yields the random seed used."""
     random_seed = getattr(request, "param", DEFAULT_SEED)
     assert isinstance(random_seed, int) or random_seed is None
 

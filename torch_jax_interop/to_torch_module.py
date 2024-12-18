@@ -495,8 +495,7 @@ class _JaxFunction(torch.autograd.Function, Generic[Params]):
 
 
 class _JaxScalarFunction(torch.autograd.Function, Generic[Params]):
-    """Wrapper for a jax scalar-valued function, making it usable in PyTorch's autograd
-    system.
+    """Wrapper for a jax scalar-valued function, making it usable in PyTorch's autograd system.
 
     This has potentially an advantage compared to `JaxFunction` (which is more general):
     It gets to use (and jit) the `jax.value_and_grad` of the function.

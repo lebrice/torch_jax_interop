@@ -21,9 +21,18 @@ This conversion happens thanks the `dlpack` format, which is a common format for
 
 
 ## Installation
+
+We would  **highly** recommend you use [uv](https://docs.astral.sh/uv/) to manage your project dependencies. This greatly helps avoid cuda dependency conflicts between PyTorch and Jax.
+```bash
+uv add torch-jax-interop
+```
+
+Otherwise, if you don't use `uv`:
+
 ```bash
 pip install torch-jax-interop
 ```
+
 
 ## Comparable projects
 

@@ -15,7 +15,7 @@ import torch
 import torch.func
 import torch.utils._pytree
 from jax.dlpack import from_dlpack as jax_from_dlpack  # type: ignore
-from torch.utils.dlpack import to_dlpack as torch_to_dlpack
+from torch.utils.dlpack import to_dlpack as torch_to_dlpack  # type: ignore
 
 from .types import (
     Dataclass,
@@ -103,8 +103,29 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
     """
     value = value.detach()
     try:
-        dlpack = torch_to_dlpack(value)
-        return jax_from_dlpack(dlpack, copy=False)
+        # Try using the "new" way to convert using from_dlpack directly
+        return jax_from_dlpack(
+            value, device=torch_to_jax_device(value.device), copy=None
+        )
+    except AssertionError as err:
+        if not err.args[0].startswith("Unexpected XLA layout override"):
+            raise
+        # Some "AssertionError: Unexpected XLA layout override"
+        # Try using the "old" way to convert using from_dlpack of a dlpack tensor.
+        try:
+            dlpack = torch_to_dlpack(value)
+            return jax_from_dlpack(dlpack, copy=False)
+        except jaxlib.xla_extension.XlaRuntimeError as err:
+            log_once(
+                logger,
+                message=(
+                    f"Unable to view tensor of shape {tuple(value.shape)} as a jax.Array in-place:\n"
+                    f"'{err}'\n"
+                    f"Tensors of this shape will be flattened and unflattened (which may or "
+                    f"may not involve making a copy of the tensor's data)."
+                ),
+                level=logging.WARNING,
+            )
     except jaxlib.xla_extension.XlaRuntimeError as err:
         log_once(
             logger,

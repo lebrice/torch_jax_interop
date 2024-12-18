@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import collections.abc
+import contextlib
 import dataclasses
 import functools
 import logging
 from logging import getLogger as get_logger
 from typing import Any, Callable, overload
+import warnings
 
 import jax
 import jax.core
@@ -93,19 +95,56 @@ def no_op(v: Any) -> Any:
     return v
 
 
+def _direct_conversion(v: torch.Tensor) -> jax.Array:
+    return jax_from_dlpack(v, copy=False)
+
+
+def _to_from_dlpack(
+    v: torch.Tensor, ignore_deprecation_warning: bool = True
+) -> jax.Array:
+    with warnings.catch_warnings() if ignore_deprecation_warning else contextlib.nullcontext():
+        # Only way to get this to work for CPU seems to be with to/from dlpack... so we have to use this deprecated
+        # conversion method for now.
+        # todo: Should we let it though though?
+        if ignore_deprecation_warning:
+            warnings.filterwarnings("ignore", category=DeprecationWarning)
+        return jax_from_dlpack(torch_to_dlpack(v), copy=False)
+
+
 def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
     """Converts a PyTorch Tensor into a jax.Array.
 
     NOTE: seems like torch.float64 tensors are implicitly converted to jax.float32 tensors?
+    TODO:
+    - If the tensor is on the GPU, then we can use the direct conversion with jax from_dlpack.
+      Otherwise we might have to convert to/from dlpack, which is apparently being deprecated.
+        - ALSO: this seems to happen when jitted code is calling a pure callback. Not sure if it happens in other cases too
+        (e.g. just calling this with a jax tensor in non-jit mode).
     """
     value = value.detach()
 
+    if value.device.type == "cpu":
+        try:
+            # todo: Calling jax_from_dlpack with a cpu tensor causes issues in jax pure callbacks **later**,
+            # when they are run by jax somehow. This causes issues when using a nn.Module in jax graph.
+            # return _direct_conversion(value)
+            return _to_from_dlpack(value, ignore_deprecation_warning=True)
+
+        except jaxlib.xla_extension.XlaRuntimeError as err:
+            log_once(
+                logger,
+                message=(
+                    f"Unable to view tensor of shape {tuple(value.shape)} as a jax.Array in-place:\n"
+                    f"'{err}'\n"
+                    f"Tensors of this shape will be flattened and unflattened (which may or "
+                    f"may not involve making a copy of the tensor's data)."
+                ),
+                level=logging.WARNING,
+            )
+            return _direct_conversion(value.flatten()).reshape(value.shape)
+
     try:
-        # If the tensor is on the GPU, then we can use this direct conversion. Otherwise we have to convert
-        # to/from dlpack.
-        if value.device.type != "cpu":
-            return jax_from_dlpack(value, copy=False)
-        return jax_from_dlpack(torch_to_dlpack(value), copy=False)
+        return _direct_conversion(value)
     except jaxlib.xla_extension.XlaRuntimeError as err:
         log_once(
             logger,
@@ -117,12 +156,11 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
             ),
             level=logging.WARNING,
         )
+        return _direct_conversion(value.flatten()).reshape(value.shape)
+
     # NOTE: This may or may not involve making a copy of the tensor.
     # See https://pytorch.org/docs/stable/generated/torch.flatten.html#torch.flatten
-    flattened_value = value.flatten()
-    array: jax.Array = jax_from_dlpack(flattened_value, copy=False)
-    array = array.reshape(value.shape)
-    return array
+    return torch_to_jax_tensor(value.flatten()).reshape(value.shape)
 
 
 # Register it like this so the type hints are preserved on the functions (which are also called

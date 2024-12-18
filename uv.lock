@@ -1393,7 +1393,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jax", extras = ["cpu"], specifier = ">=0.4.28" },
-    { name = "torch", specifier = ">=2.5.1" },
+    { name = "torch", specifier = ">=2.0.0" },
 ]
 
 [package.metadata.requires-dev]

@@ -3,18 +3,22 @@ default_language_version:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v5.0.0
     hooks:
       # list of supported hooks: https://pre-commit.com/hooks.html
       - id: trailing-whitespace
         require_serial: true
       - id: end-of-file-fixer
         require_serial: true
-        # Exclude any .txt or .md files anywhere in the 'tests' directory:
-        exclude: ^tests/.*\.(txt|md)$
       # - id: check-docstring-first
+      - id: check-added-large-files
+        require_serial: true
+        exclude: uv.lock
+      - id: check-ast
+        require_serial: true
       - id: check-yaml
         require_serial: true
+        exclude: "mkdocs.yml"
       - id: debug-statements
         require_serial: true
       - id: detect-private-key
@@ -25,55 +29,61 @@ repos:
         require_serial: true
       - id: check-case-conflict
         require_serial: true
-      - id: check-added-large-files
-        require_serial: true
-
-  - repo: https://github.com/python-poetry/poetry
-    rev: 1.7.0
-    hooks:
-      - id: poetry-check
-        require_serial: true
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.
-    rev: v0.1.14
+    rev: "v0.6.9"
     hooks:
-      # Run the linter.
       - id: ruff
-        args: ['--fix']
+        args: ["--fix"]
         require_serial: true
-      # Run the formatter.
-      - id: ruff-format
-        args: []
 
   # python docstring formatting
   - repo: https://github.com/myint/docformatter
-    rev: v1.5.1
+    rev: v1.7.5
     hooks:
       - id: docformatter
-        # args: [--in-place, --wrap-summaries=99, --wrap-descriptions=99]
-        args: [--in-place, --wrap-summaries=88, --wrap-descriptions=88]
+        language: python
+        args: [--in-place, --wrap-summaries=99, --wrap-descriptions=99]
+        require_serial: true
+
+  # NOTE: Disabling this, since I'm having the glib-c2.29 weird bug.
+  # # yaml formatting
+  # - repo: https://github.com/pre-commit/mirrors-prettier
+  #   rev: v2.7.1
+  #   hooks:
+  #     - id: prettier
+  #       types: [yaml]
+
+  # jupyter notebook cell output clearing
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
         require_serial: true
 
   # md formatting
-  # NOTE: Disabling, since it wants to change the markdown regression files with escaped
-  # characters.
-  # - repo: https://github.com/executablebooks/mdformat
-  #   rev: 0.7.16
-  #   hooks:
-  #     - id: mdformat
-  #       args: ["--number"]
-  #       additional_dependencies:
-  #         - mdformat-gfm
-  #         - mdformat-tables
-  #         - mdformat_frontmatter
-  #         # - mdformat-toc
-  #         # - mdformat-black
-  #       require_serial: true
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.17
+    hooks:
+      - id: mdformat
+        exclude: "docs/" # terrible, I know, but it's messing up everything with mkdocs fences!
+        args: ["--number"]
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-tables
+          - mdformat_frontmatter
+          - mdformat-toc
+          - mdformat-config
+          - mdformat-black
+          # see https://github.com/KyleKing/mdformat-mkdocs
+          # Doesn't seem to work!
+          - mdformat-mkdocs[recommended]>=2.1.0
+        require_serial: true
 
   # word spelling linter
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.2
+    rev: v2.3.0
     hooks:
       - id: codespell
         args:

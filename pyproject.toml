@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "jax[cpu]>=0.4.28",
+    "mktestdocs>=0.2.4",
     "torch>=2.0.0",
 ]
 
@@ -21,10 +22,11 @@ dev = [
     "mkdocs-material>=9.5.44",
     "flax>=0.10.2",
     "tensor-regression>=0.0.8",
-    "mktestdocs>=0.2.4",
+    "mktestdocs>=0.2.3",
     "pytest-benchmark>=5.1.0",
     "jax[cuda12]>=0.4.28",
     "pytest-env>=1.1.5",
+    "mkdocstrings[python]>=0.27.0",
 ]
 
 [tool.pytest.ini_options]

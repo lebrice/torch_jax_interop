@@ -1,0 +1,7 @@
+# Changes here will be overwritten by Copier
+_commit: v0.0.2
+_src_path: gh:lebrice/tool_template
+python_version: '3.12'
+tool_name: torch_jax_interop
+your_email: fabrice.normandin@gmail.com
+your_name: Fabrice Normandin

@@ -27,6 +27,7 @@ dev = [
     "jax[cuda12]>=0.4.28",
     "pytest-env>=1.1.5",
     "mkdocstrings[python]>=0.27.0",
+    "black>=24.10.0",
 ]
 
 [tool.pytest.ini_options]

@@ -5,9 +5,9 @@ import contextlib
 import dataclasses
 import functools
 import logging
+import warnings
 from logging import getLogger as get_logger
 from typing import Any, Callable, overload
-import warnings
 
 import jax
 import jax.core
@@ -69,7 +69,7 @@ def torch_to_jax(value: Any, /) -> Any:
     Converts the tensors "in-place", without the need for copies or moving data to the CPU.
 
     Args:
-      value: torch tensor
+      value: a torch tensor
 
     Returns:
       a JAX array

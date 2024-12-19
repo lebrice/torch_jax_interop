@@ -35,6 +35,7 @@ class WrappedJaxFunction(torch.nn.Module):
     (jax.Arrays) and should return a single output (jax.Array).
 
     TODOs:
+
     - [ ] Test and add support for different combinations of .requires_grad in inputs.
     - [ ] Add support for multiple outputs instead of a single tensor.
     - [ ] Somehow support pytrees as inputs instead of just jax Arrays, maybe with a

@@ -1,4 +1,5 @@
 site_name: My Docs
+site_url: https://lebrice.github.io/torch_jax_interop
 theme:
   name: material
 
@@ -24,7 +25,7 @@ plugins:
             - https://pytorch.org/docs/stable/objects.inv
             - https://jax.readthedocs.io/en/latest/objects.inv
           options:
-            docstring_style: google
+            docstring_style: numpy
             members_order: source
             annotations_path: brief
             show_docstring_attributes: true

@@ -64,19 +64,8 @@ def torch_module_to_jax(
 
     Copied and adapted from https://github.com/subho406/pytorch2jax/blob/main/pytorch2jax/pytorch2jax.py#L32
 
-    Parameters
-    ----------
-    model : torch.nn.Module
-        A Torch module.
-    example_output : torch.Tensor | None, optional
-        Example of an output of the model, used to specify the expected shapes and
-        dtypes so that this computation can be jitted.
-
-    Returns
+    Example
     -------
-    the functional model and the model parameters (converted to jax arrays).
-
-    ## Example
 
     ```python
     import torch
@@ -115,6 +104,19 @@ def torch_module_to_jax(
     # (Array([[-0.02565618, -0.00836356, -0.01682458],
     #        [ 1.0495702 ,  0.34214562,  0.68827784]], dtype=float32), Array([-0.02657786,  1.0872754 ], dtype=float32))
     ```
+
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        A Torch module.
+    example_output : torch.Tensor | None, optional
+        Example of an output of the model, used to specify the expected shapes and
+        dtypes so that this computation can be jitted.
+
+    Returns
+    -------
+    the functional model and the model parameters (converted to jax arrays).
     """
 
     if example_output is not None:

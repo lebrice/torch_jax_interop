@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier
-_commit: v0.0.3
+_commit: v0.0.3-1-ge9880ab
 _src_path: gh:lebrice/tool_template
 project_description: Simple tools to mix and match PyTorch and Jax - Get the best
     of both worlds!

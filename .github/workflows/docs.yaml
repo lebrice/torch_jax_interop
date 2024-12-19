@@ -21,7 +21,7 @@ jobs:
           cache-suffix: "3.12"
 
       - name: Pin python-version
-        run: uv python pin 3.10
+        run: uv python pin 3.12
 
       - name: Install dependencies
         run: uv sync --extra docs --frozen

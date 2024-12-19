@@ -23,7 +23,7 @@ from torch_jax_interop.utils import log_once
         (tuple(range(1, 6)), True),
         ((1, 3, 32, 32), True),
     ],
-    ids="shape={}".format,
+    ids=str,
 )
 def test_torch_to_jax_tensor(
     torch_device: torch.device,

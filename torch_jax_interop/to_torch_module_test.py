@@ -34,12 +34,7 @@ from torch_jax_interop.types import jit
     "do_regression_check",
     [
         False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="TODO: This regression check appears to be flaky, sometimes fails with `input_grad` being different than expected."
-            ),
-        ),
+        True,
     ],
 )
 def test_use_jax_module_in_torch_graph(
@@ -159,8 +154,7 @@ def test_use_jax_scalar_function_in_torch_graph(
     seed: int,
     input_requires_grad: bool,
 ):
-    """Same idea, but now its the entire loss function that is in jax, not just the
-    module."""
+    """Same idea, but now its the entire loss function that is in jax, not just the module."""
     jax_network, jax_params = jax_network_and_params
 
     batch_size = torch_input.shape[0]

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://lebrice.github.io/torch_jax_interop/</loc>
+         <lastmod>2024-12-19</lastmod>
+    </url>
+    <url>
+         <loc>https://lebrice.github.io/torch_jax_interop/reference/torch_jax_interop/</loc>
+         <lastmod>2024-12-19</lastmod>
+    </url>
+</urlset>

@@ -32,6 +32,9 @@ Otherwise, if you don't use `uv`:
 pip install torch-jax-interop
 ```
 
+> This will package only depends on the base (cpu) version of Jax by default.
+> If you want to also install the GPU version of jax, use `uv add torch-jax-interop[gpu]` or `uv add jax[cuda12]` directly (or the pip equivalents).
+
 ## Comparable projects
 
 - https://github.com/lucidrains/jax2torch: Seems to be the first minimal prototype for something like this. Supports jax2torch for functions, but not the other way around.
@@ -115,12 +118,8 @@ We can then wrap this jax function into a torch.nn.Module with learnable paramet
 import torch
 import torch.nn
 
-module = WrappedJaxFunction(
-    some_jax_function, jax.random.normal(jax.random.key(0), (2, 1))
-)
-module = module.to(
-    "cpu"
-)  # jax arrays are on GPU by default, moving them to CPU for this example.
+module = WrappedJaxFunction(some_jax_function, jax.random.normal(jax.random.key(0), (2, 1)))
+module = module.to("cpu")  # jax arrays are on GPU by default, moving them to CPU for this example.
 ```
 
 The parameters are now learnable parameters of the module parameters:

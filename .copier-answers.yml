@@ -1,6 +1,8 @@
 # Changes here will be overwritten by Copier
-_commit: v0.0.2
+_commit: v0.0.3
 _src_path: gh:lebrice/tool_template
+project_description: Simple tools to mix and match PyTorch and Jax - Get the best
+    of both worlds!
 python_version: '3.12'
 tool_name: torch_jax_interop
 your_email: fabrice.normandin@gmail.com

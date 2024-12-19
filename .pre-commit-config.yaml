@@ -44,7 +44,7 @@ repos:
     hooks:
       - id: docformatter
         language: python
-        args: [--in-place, --wrap-summaries=99, --wrap-descriptions=99]
+        args: [--in-place]
         require_serial: true
 
   # NOTE: Disabling this, since I'm having the glib-c2.29 weird bug.

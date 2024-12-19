@@ -1,17 +1,13 @@
 [project]
 name = "torch_jax_interop"
-version = "0.0.1"
 description = "Simple tools to mix and match PyTorch and Jax - Get the best of both worlds!"
 readme = "README.md"
 authors = [
     { name = "Fabrice Normandin", email = "fabrice.normandin@gmail.com" },
 ]
 requires-python = ">=3.12"
-dependencies = [
-    "jax[cpu]>=0.4.28",
-    "mktestdocs>=0.2.4",
-    "torch>=2.0.0",
-]
+dependencies = ["jax[cpu]>=0.4.28", "mktestdocs>=0.2.4", "torch>=2.0.0"]
+dynamic = ["version"]
 
 
 [dependency-groups]
@@ -38,13 +34,12 @@ addopts = ["--doctest-modules"]
 [tool.pytest_env]
 CUBLAS_WORKSPACE_CONFIG = ":4096:8"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.ruff]
+line-length = 99
 
-
-[tool.hatch.build.targets.wheel]
-packages = ["torch_jax_interop"]
+[tool.docformatter]
+wrap-summaries = 99
+wrap-descriptions = 99
 
 [tool.uv]
 managed = true
@@ -52,3 +47,13 @@ managed = true
 [tool.uv-dynamic-versioning]
 vcs = "git"
 style = "semver"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["torch_jax_interop"]
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"

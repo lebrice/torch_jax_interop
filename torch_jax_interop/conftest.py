@@ -24,7 +24,8 @@ DEFAULT_SEED = 123
 
 @pytest.fixture(autouse=True)
 def seed(request: pytest.FixtureRequest):
-    """Fixture that seeds everything for reproducibility and yields the random seed used."""
+    """Fixture that seeds everything for reproducibility and yields the random
+    seed used."""
     random_seed = getattr(request, "param", DEFAULT_SEED)
     assert isinstance(random_seed, int) or random_seed is None
 
@@ -108,7 +109,8 @@ def torch_input(torch_device: torch.device, seed: int):
 class JaxCNN(flax.linen.Module):
     """A simple CNN model.
 
-    Taken from https://flax.readthedocs.io/en/latest/quick_start.html#define-network
+    Taken from
+    https://flax.readthedocs.io/en/latest/quick_start.html#define-network
     """
 
     num_classes: int = 10

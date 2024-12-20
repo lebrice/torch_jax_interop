@@ -1,0 +1,45 @@
+# This workflow will upload a Python Package using Poetry when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+jobs:
+  # https://docs.pypi.org/trusted-publishers/using-a-publisher/
+  publish:
+    strategy:
+      matrix:
+        python-version: [3.12]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    environment: release
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+          # https://github.com/astral-sh/setup-uv?tab=readme-ov-file#github-authentication-token
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache-suffix: ${{ matrix.python-version }}
+      - name: Pin python-version ${{ matrix.python-version }}
+        run: uv python pin ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

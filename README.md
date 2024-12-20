@@ -1,6 +1,7 @@
-# Torch <-> Jax Interop Utilities
+# Torch \<-> Jax Interop Utilities
 
 Hey, you there!
+
 - Do you use PyTorch, but are curious about Jax (or vice-versa)? Would you prefer to start adding some (Jax/PyTorch) progressively into your projects rather than to start from scratch?
 - Want to avoid the pain of rewriting a model from an existing PyTorch codebase in Jax (or vice-versa)?
 - Do you like the performance benefits of Jax, but aren't prepared to sacrifice your nice PyTorch software frameworks (e.g. [Lightning](https://lightning.ai/docs/pytorch/stable/))?
@@ -13,16 +14,14 @@ You can have it all: Sweet, sweet jit-ed functions and automatic differentiation
 This package contains a few utility functions to simplify interoperability between jax and torch: `torch_to_jax`, `jax_to_torch`, `WrappedJaxFunction`, `torch_module_to_jax`.
 
 This repository contains utilities for converting PyTorch Tensors to JAX arrays and vice versa.
-This conversion happens thanks the `dlpack` format, which is a common format for exchanging tensors between different deep learning frameworks. Crucially, this format allows for zero-copy \* tensor sharing between PyTorch and JAX.
-
+This conversion happens thanks the `dlpack` format, which is a common format for exchanging tensors between different deep learning frameworks. Crucially, this format allows for zero-copy * tensor sharing between PyTorch and JAX.
 
 > \* Note: For some torch tensors with specific memory layouts, for example channels-first image tensors, Jax will refuse to read the array from the dlpack, so we flatten and unflatten the data when converting, which might involve a copy.This is displayed as a warning at the moment on the command-line.
-
-
 
 ## Installation
 
 We would  **highly** recommend you use [uv](https://docs.astral.sh/uv/) to manage your project dependencies. This greatly helps avoid cuda dependency conflicts between PyTorch and Jax.
+
 ```bash
 uv add torch-jax-interop
 ```
@@ -33,6 +32,8 @@ Otherwise, if you don't use `uv`:
 pip install torch-jax-interop
 ```
 
+> This will package only depends on the base (cpu) version of Jax by default.
+> If you want to also install the GPU version of jax, use `uv add torch-jax-interop[gpu]` or `uv add jax[cuda12]` directly (or the pip equivalents).
 
 ## Comparable projects
 
@@ -40,7 +41,6 @@ pip install torch-jax-interop
 - https://github.com/subho406/pytorch2jax: Very similar. The way we convert `torch.nn.Module`s to `jax.custom_vjp` is actually based on their implementation, with some additions (support for jitting, along with more flexible input/output signatures).
 - https://github.com/samuela/torch2jax: Takes a different approach: using a `torch.Tensor` subclass and `__torch_fuction__`.
 - https://github.com/rdyro/torch2jax: Just found this, seems to have very good support for the torch to jax conversion, but not the other way around. Has additional features like specifying the depth (levels of derivatives).
-
 
 ## Usage
 
@@ -51,6 +51,7 @@ from torch_jax_interop import jax_to_torch, torch_to_jax
 ```
 
 Converting `torch.Tensor`s into `jax.Array`s:
+
 ```python
 import jax
 import torch
@@ -64,14 +65,15 @@ jax_arrays = jax.tree.map(torch_to_jax, tensors)
 torch_tensors = jax.tree.map(jax_to_torch, jax_arrays)
 ```
 
-
 Passing torch.Tensors to a Jax function:
+
 ```python
 @jax_to_torch
 def some_jax_function(x: jnp.ndarray) -> jnp.ndarray:
     return x + jnp.ones_like(x)
 
-torch_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 some_torch_tensor = torch.arange(5, device=device)
 
 torch_output = some_jax_function(some_torch_tensor)
@@ -79,16 +81,16 @@ torch_output = some_jax_function(some_torch_tensor)
 
 some_jax_array = jnp.arange(5)
 
+
 @torch_to_jax
 def some_torch_function(x: torch.Tensor) -> torch.Tensor:
     return x + torch.ones_like(x)
 
+
 print(some_torch_function(some_jax_array))
 ```
 
-
 ## Examples
-
 
 ### Jax to Torch nn.Module
 
@@ -97,8 +99,10 @@ Suppose we have some jax function we'd like to use in a PyTorch model:
 ```python
 import jax
 import jax.numpy as jnp
+
+
 def some_jax_function(params: jax.Array, x: jax.Array):
-    '''Some toy function that takes in some parameters and an input vector.'''
+    """Some toy function that takes in some parameters and an input vector."""
     return jnp.dot(x, params)
 ```
 
@@ -113,6 +117,7 @@ We can then wrap this jax function into a torch.nn.Module with learnable paramet
 ```python
 import torch
 import torch.nn
+
 module = WrappedJaxFunction(some_jax_function, jax.random.normal(jax.random.key(0), (2, 1)))
 module = module.to("cpu")  # jax arrays are on GPU by default, moving them to CPU for this example.
 ```
@@ -121,8 +126,7 @@ The parameters are now learnable parameters of the module parameters:
 
 ```python
 dict(module.state_dict())
-{'params.0': tensor([[-0.7848],
-        [ 0.8564]])}
+{"params.0": tensor([[-0.7848], [0.8564]])}
 ```
 
 You can use this just like any other torch.nn.Module:
@@ -144,6 +148,7 @@ Same goes for `flax.linen.Module`s, you can now use them in your torch forward /
 ```python
 import flax.linen
 
+
 class Classifier(flax.linen.Module):
     num_classes: int = 10
 
@@ -155,6 +160,7 @@ class Classifier(flax.linen.Module):
         x = flax.linen.Dense(features=self.num_classes)(x)
         return x
 
+
 jax_module = Classifier(num_classes=10)
 jax_params = jax_module.init(jax.random.key(0), x)
 
@@ -163,9 +169,7 @@ from torch_jax_interop import WrappedJaxFunction
 torch_module = WrappedJaxFunction(jax.jit(jax_module.apply), jax_params)
 ```
 
-
 ### Torch nn.Module to jax function
-
 
 ```python
 >>> import torch

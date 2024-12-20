@@ -85,8 +85,10 @@ def no_op(v: Any) -> Any:
 
 def jax_to_torch_tensor(value: jax.Array, /) -> torch.Tensor:
     """Converts a Jax array into a torch.Tensor."""
-    dpack = jax_to_dlpack(value)
-    return torch_dlpack.from_dlpack(dpack)
+    try:
+        return torch_dlpack.from_dlpack(value)
+    except Exception:
+        return torch_dlpack.from_dlpack(jax_to_dlpack(value))
 
 
 # Register it like this so the type hints are preserved on the functions (which are also called

@@ -32,7 +32,7 @@ repos:
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.
-    rev: "v0.6.9"
+    rev: "v0.8.4"
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -57,14 +57,14 @@ repos:
 
   # jupyter notebook cell output clearing
   - repo: https://github.com/kynan/nbstripout
-    rev: 0.7.1
+    rev: 0.8.1
     hooks:
       - id: nbstripout
         require_serial: true
 
   # md formatting
   - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.17
+    rev: 0.7.20
     hooks:
       - id: mdformat
         exclude: "docs/" # terrible, I know, but it's messing up everything with mkdocs fences!

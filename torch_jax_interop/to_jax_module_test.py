@@ -21,15 +21,28 @@ def test_torch_to_jax_nn_module(torch_device: torch.device):
         )
         torch_params = dict(torch_net.named_parameters())
         torch_input = torch.randn(1, 10, requires_grad=True)
-    expected_torch_output = torch_net(torch_input)
-    assert isinstance(expected_torch_output, torch.Tensor)
-    expected_torch_output.backward(gradient=torch.ones_like(expected_torch_output))
-    expected_input_grad = torch_input.grad
 
     jax_net_fn, jax_net_params = torch_module_to_jax(torch_net)
 
     for jax_param, torch_param in zip(jax_net_params, torch_params.values()):
         torch.testing.assert_close(jax_to_torch(jax_param), torch_param)
+
+    expected_torch_output = torch_net(torch_input)
+    assert isinstance(expected_torch_output, torch.Tensor)
+    assert expected_torch_output.requires_grad
+    assert expected_torch_output.device == torch_device
+
+    def _loss(output):
+        return (output**2).mean()
+
+    loss = _loss(expected_torch_output)
+    loss.backward()
+    # expected_torch_output.backward(gradient=torch.ones_like(expected_torch_output))
+    # Make a copy of the gradients so we can compare them later.
+    expected_torch_grads = {
+        k: v.grad.detach().clone() for k, v in torch_params.items() if v.grad is not None
+    }
+    torch_net.zero_grad(set_to_none=True)
 
     jax_input = torch_to_jax(torch_input)
     jax_output = jax_net_fn(jax_net_params, jax_input)
@@ -38,14 +51,15 @@ def test_torch_to_jax_nn_module(torch_device: torch.device):
     torch.testing.assert_close(torch_output, expected_torch_output)
 
     def loss_fn(params, input):
-        return jax_net_fn(params, input).sum()
+        return _loss(jax_net_fn(params, input))
 
-    grad_fn = jax.grad(loss_fn, argnums=1)
-
-    input_grad = grad_fn(jax_net_params, jax_input)
-    torch_input_grad = jax_to_torch(input_grad)
-
-    torch.testing.assert_close(torch_input_grad, expected_input_grad)
+    grad_fn = jax.grad(loss_fn, argnums=0)
+    grads = grad_fn(jax_net_params, jax_input)
+    jax_grads = jax.tree.map(jax_to_torch, grads)
+    assert isinstance(jax_grads, tuple) and len(jax_grads) == len(jax_net_params)
+    assert len(jax_grads) == len(expected_torch_grads)
+    for jax_grad, (name, torch_grad) in zip(jax_grads, expected_torch_grads.items()):
+        torch.testing.assert_close(jax_grad, torch_grad)
 
 
 @pytest.mark.parametrize("with_jit", [False, True])

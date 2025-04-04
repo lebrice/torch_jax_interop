@@ -29,8 +29,7 @@ Out = jax.Array
 
 
 class WrappedJaxFunction(torch.nn.Module):
-    """Wraps a jax function that returns vectors or matrices into a
-    `torch.nn.Module`.
+    """Wraps a jax function that returns vectors or matrices into a `torch.nn.Module`.
 
     This function should accept parameters as a first argument, followed by some inputs
     (jax.Arrays) and should return a single output (jax.Array).
@@ -330,8 +329,7 @@ class WrappedJaxScalarFunction(WrappedJaxFunction):
 
 
 class _JaxFunction(torch.autograd.Function, Generic[Params]):
-    """Wrapper for a jax function, making it usable in PyTorch's autograd
-    system.
+    """Wrapper for a jax function, making it usable in PyTorch's autograd system.
 
     TODOs: make this more flexible in terms of input/output signature:
     - [ ] Currently assumes that has_aux is False.
@@ -512,8 +510,7 @@ class _JaxFunction(torch.autograd.Function, Generic[Params]):
 
 
 class _JaxScalarFunction(torch.autograd.Function, Generic[Params]):
-    """Wrapper for a jax scalar-valued function, making it usable in PyTorch's
-    autograd system.
+    """Wrapper for a jax scalar-valued function, making it usable in PyTorch's autograd system.
 
     This has potentially an advantage compared to `JaxFunction` (which is more general):
     It gets to use (and jit) the `jax.value_and_grad` of the function.

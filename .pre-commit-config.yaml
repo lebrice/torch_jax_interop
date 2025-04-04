@@ -63,23 +63,23 @@ repos:
         require_serial: true
 
   # md formatting
-  - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.20
-    hooks:
-      - id: mdformat
-        exclude: "docs/" # terrible, I know, but it's messing up everything with mkdocs fences!
-        args: ["--number"]
-        additional_dependencies:
-          - mdformat-gfm
-          - mdformat-tables
-          - mdformat_frontmatter
-          - mdformat-toc
-          - mdformat-config
-          - mdformat-black
-          # see https://github.com/KyleKing/mdformat-mkdocs
-          # Doesn't seem to work!
-          - mdformat-mkdocs[recommended]>=2.1.0
-        require_serial: true
+  # - repo: https://github.com/executablebooks/mdformat
+  #   rev: 0.7.20
+  #   hooks:
+  #     - id: mdformat
+  #       exclude: "docs/" # terrible, I know, but it's messing up everything with mkdocs fences!
+  #       args: ["--number"]
+  #       additional_dependencies:
+  #         - mdformat-gfm
+  #         - mdformat-tables
+  #         - mdformat_frontmatter
+  #         - mdformat-toc
+  #         - mdformat-config
+  #         - mdformat-black
+  #         # see https://github.com/KyleKing/mdformat-mkdocs
+  #         # Doesn't seem to work!
+  #         - mdformat-mkdocs[recommended]>=2.1.0
+  #       require_serial: true
 
   # word spelling linter
   - repo: https://github.com/codespell-project/codespell

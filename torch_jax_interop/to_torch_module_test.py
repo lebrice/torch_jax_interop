@@ -154,8 +154,7 @@ def test_use_jax_scalar_function_in_torch_graph(
     seed: int,
     input_requires_grad: bool,
 ):
-    """Same idea, but now its the entire loss function that is in jax, not just
-    the module."""
+    """Same idea, but now its the entire loss function that is in jax, not just the module."""
     jax_network, jax_params = jax_network_and_params
 
     batch_size = torch_input.shape[0]

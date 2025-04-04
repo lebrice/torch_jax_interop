@@ -95,9 +95,7 @@ def test_use_torch_module_in_jax_graph(
     )
 
     assert callable(wrapped_torch_network_fn)
-    assert isinstance(jax_params, tuple) and all(
-        isinstance(p, jax.Array) for p in jax_params
-    )
+    assert isinstance(jax_params, tuple) and all(isinstance(p, jax.Array) for p in jax_params)
     assert len(jax_params) == len(flat_torch_params)
     # TODO: Why would the ordering change?!
     jax_param_shapes = sorted([p.shape for p in jax_params])
@@ -135,9 +133,7 @@ def test_use_torch_module_in_jax_graph(
         grad_fn = value_and_grad(loss_fn, argnums=[0, 1], has_aux=True)
         if with_jit:
             grad_fn = jit(grad_fn)
-        (loss, logits), (param_grads, input_grads) = grad_fn(
-            jax_params, jax_input, labels
-        )
+        (loss, logits), (param_grads, input_grads) = grad_fn(jax_params, jax_input, labels)
         assert len(param_grads) == len(jax_params)
         assert isinstance(input_grads, jax.Array)
         assert input_grads.shape == jax_input.shape

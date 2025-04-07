@@ -76,7 +76,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
       - name: Test with pytest
-        run: uv run pytest -v --cov=torch_jax_interop --cov-report=xml --cov-append
+        run: uv run pytest -v --cov=torch_jax_interop --cov-report=xml --cov-append --gen-missing
       - name: Store coverage report as an artifact
         uses: actions/upload-artifact@v4
         with:

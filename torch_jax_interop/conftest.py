@@ -40,9 +40,7 @@ def seed(request: pytest.FixtureRequest):
     np.random.set_state(np_random_state)
 
 
-@pytest.fixture(
-    scope="session", params=["cpu", "cuda", "rocm", "tpu"], ids="backend={}".format
-)
+@pytest.fixture(scope="session", params=["cpu", "cuda", "rocm", "tpu"], ids="backend={}".format)
 def jax_device(request: pytest.FixtureRequest) -> jax.Device:
     backend_str = request.param
     try:
@@ -55,9 +53,7 @@ def jax_device(request: pytest.FixtureRequest) -> jax.Device:
 
 
 @pytest.fixture(scope="session")
-def torch_device(
-    request: pytest.FixtureRequest, jax_device: jax.Device
-) -> torch.device:
+def torch_device(request: pytest.FixtureRequest, jax_device: jax.Device) -> torch.device:
     param = getattr(request, "param", None)
     # in case of an indirect parametrization, use the specified device:
     if param is not None:
@@ -196,7 +192,10 @@ def torch_network(
     torch_device: torch.device,
 ):
     torch_network_type: type[torch.nn.Module] = request.param
-    with torch_device, torch.random.fork_rng([torch_device]):
+    with (
+        torch_device,
+        torch.random.fork_rng([torch_device] if torch_device.type == "cuda" else []),
+    ):
         torch_network = torch_network_type(num_classes=num_classes)
         # initialize any un-initialized parameters in the network by doing a forward pass
         # with a dummy input.

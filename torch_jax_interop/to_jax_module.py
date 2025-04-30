@@ -29,12 +29,10 @@ def make_functional(
 ) -> tuple[
     Callable[Concatenate[Iterable[torch.Tensor], P], Out_cov], tuple[torch.Tensor, ...]
 ]:
-    """Backward compatibility equivalent for `functorch.make_functional` in the new
-    torch.func API.
+    """Backward compatibility equivalent for `functorch.make_functional` in the new torch.func API.
 
-    Adapted from https://gist.github.com/zou3519/7769506acc899d83ef1464e28f22e6cf as
-    suggested by https://pytorch.org/docs/master/func.migrating.html#functorch-make-
-    functional
+    Adapted from https://gist.github.com/zou3519/7769506acc899d83ef1464e28f22e6cf as suggested by
+    this: https://pytorch.org/docs/master/func.migrating.html#functorch-make-functional
     """
     params_dict = dict(module_with_state.named_parameters())
     param_names = params_dict.keys()
@@ -66,6 +64,48 @@ def torch_module_to_jax(
 
     Copied and adapted from https://github.com/subho406/pytorch2jax/blob/main/pytorch2jax/pytorch2jax.py#L32
 
+    Example
+    -------
+
+    ```python
+    import torch
+    import jax
+    torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch.manual_seed(0) # doctest:+ELLIPSIS
+    # <torch._C.Generator object at ...>
+    model = torch.nn.Linear(3, 2, device=torch_device)
+    wrapped_model, params = torch_module_to_jax(model)
+    def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
+        y_pred = wrapped_model(params, x)
+        return jax.numpy.mean((y - y_pred) ** 2)
+    x = jax.random.uniform(key=jax.random.key(0), shape=(1, 3))
+    y = jax.random.uniform(key=jax.random.key(1), shape=(1, 1))
+    loss, grad = jax.value_and_grad(loss_function)(params, x, y)
+    loss  # doctest: +SKIP
+    # Array(0.5914371, dtype=float32)
+    grad  # doctest: +SKIP
+    # (Array([[-0.02565618, -0.00836356, -0.01682458],
+    #        [ 1.0495702 ,  0.34214562,  0.68827784]], dtype=float32), Array([-0.02657786,  1.0872754 ], dtype=float32))
+    ```
+
+    To use `jax.jit` on the model, you need to pass an example of an output so we can
+    tell the JIT compiler the output shapes and dtypes to expect:
+
+    ```python
+    # here we reuse the same model as before:
+    wrapped_model, params = torch_module_to_jax(model, example_output=torch.zeros(1, 2, device=torch_device))
+    def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
+        y_pred = wrapped_model(params, x)
+        return jax.numpy.mean((y - y_pred) ** 2)
+    loss, grad = jax.jit(jax.value_and_grad(loss_function))(params, x, y)
+    loss  # doctest: +SKIP
+    # Array(0.5914371, dtype=float32)
+    grad  # doctest: +SKIP
+    # (Array([[-0.02565618, -0.00836356, -0.01682458],
+    #        [ 1.0495702 ,  0.34214562,  0.68827784]], dtype=float32), Array([-0.02657786,  1.0872754 ], dtype=float32))
+    ```
+
+
     Parameters
     ----------
     model : torch.nn.Module
@@ -77,39 +117,6 @@ def torch_module_to_jax(
     Returns
     -------
     the functional model and the model parameters (converted to jax arrays).
-
-    ## Example
-
-    >>> import torch
-    >>> import jax
-    >>> model = torch.nn.Linear(3, 2, device="cuda")
-    >>> wrapped_model, params = torch_module_to_jax(model)
-    >>> def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
-    ...     y_pred = wrapped_model(params, x)
-    ...     return jax.numpy.mean((y - y_pred) ** 2)
-    >>> x = jax.random.uniform(key=jax.random.key(0), shape=(1, 3))
-    >>> y = jax.random.uniform(key=jax.random.key(1), shape=(1, 1))
-    >>> loss, grad = jax.value_and_grad(loss_function)(params, x, y)
-    >>> loss
-    Array(0.3944674, dtype=float32)
-    >>> grad
-    (Array([[-0.46541408, -0.15171866, -0.30520514],
-           [-0.7201077 , -0.23474531, -0.47222584]], dtype=float32), Array([-0.4821338, -0.7459771], dtype=float32))
-
-    To use `jax.jit` on the model, you need to pass an example of an output so we can
-    tell the JIT compiler the output shapes and dtypes to expect:
-
-    >>> # here we reuse the same model as before:
-    >>> wrapped_model, params = torch_module_to_jax(model, example_output=torch.zeros(1, 2, device="cuda"))
-    >>> def loss_function(params, x: jax.Array, y: jax.Array) -> jax.Array:
-    ...     y_pred = wrapped_model(params, x)
-    ...     return jax.numpy.mean((y - y_pred) ** 2)
-    >>> loss, grad = jax.jit(jax.value_and_grad(loss_function))(params, x, y)
-    >>> loss
-    Array(0.3944674, dtype=float32)
-    >>> grad
-    (Array([[-0.46541408, -0.15171866, -0.30520514],
-           [-0.7201077 , -0.23474531, -0.47222584]], dtype=float32), Array([-0.4821338, -0.7459771], dtype=float32))
     """
 
     if example_output is not None:

@@ -1,4 +1,5 @@
 import logging
+import shutil
 from typing import Any
 
 import jax
@@ -14,6 +15,26 @@ from torch_jax_interop.to_jax_module import torch_module_to_jax
 from torch_jax_interop.utils import log_once
 
 
+def test_jax_can_use_the_GPU():
+    """Test that Jax can use the GPU if it we have one."""
+    # NOTE: Super interesting: Seems like running just an
+    # `import jax.numpy; print(jax.numpy.zeros(1).devices())` in a new terminal FAILS, but if you
+    # do `import torch` before that, then it works!
+    import jax.numpy
+
+    device = jax.numpy.zeros(1).devices().pop()
+    if shutil.which("nvidia-smi"):
+        assert str(device) == "cuda:0"
+    else:
+        assert "cpu" in str(device).lower()
+
+
+def test_torch_can_use_the_GPU():
+    """Test that torch can use the GPU if it we have one."""
+
+    assert torch.cuda.is_available() == bool(shutil.which("nvidia-smi"))
+
+
 @pytest.mark.parametrize(
     ("shape", "might_warn"),
     [
@@ -23,7 +44,7 @@ from torch_jax_interop.utils import log_once
         (tuple(range(1, 6)), True),
         ((1, 3, 32, 32), True),
     ],
-    ids="shape={}".format,
+    ids=str,
 )
 def test_torch_to_jax_tensor(
     torch_device: torch.device,
@@ -40,9 +61,7 @@ def test_torch_to_jax_tensor(
 
     gen = torch.Generator(device=torch_device).manual_seed(seed)
     if torch_dtype.is_floating_point:
-        torch_value = torch.rand(
-            shape, device=torch_device, generator=gen, dtype=torch_dtype
-        )
+        torch_value = torch.rand(shape, device=torch_device, generator=gen, dtype=torch_dtype)
     else:
         torch_value = torch.randint(
             low=0,
@@ -76,15 +95,11 @@ def test_torch_to_jax_tensor(
     if torch_dtype == torch.float64:
         assert jax_dtype == jnp.float32
         assert torch_round_trip.dtype == torch.float32
-        torch.testing.assert_close(
-            torch_round_trip, torch_value.to(torch_round_trip.dtype)
-        )
+        torch.testing.assert_close(torch_round_trip, torch_value.to(torch_round_trip.dtype))
     elif torch_dtype == torch.int64:
         assert jax_dtype == jnp.int32
         assert torch_round_trip.dtype == torch.int32
-        torch.testing.assert_close(
-            torch_round_trip, torch_value.to(torch_round_trip.dtype)
-        )
+        torch.testing.assert_close(torch_round_trip, torch_value.to(torch_round_trip.dtype))
     else:
         torch.testing.assert_close(torch_value, torch_round_trip)
 
@@ -118,9 +133,7 @@ class FooBar:
 
 
 @pytest.mark.parametrize("unsupported_value", [FooBar()])
-def test_log_once_on_unsupported_value(
-    unsupported_value: Any, caplog: pytest.LogCaptureFixture
-):
+def test_log_once_on_unsupported_value(unsupported_value: Any, caplog: pytest.LogCaptureFixture):
     with caplog.at_level(logging.DEBUG):
         assert torch_to_jax(unsupported_value) is unsupported_value
     assert len(caplog.records) == 1

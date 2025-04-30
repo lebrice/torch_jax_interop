@@ -35,6 +35,7 @@ class WrappedJaxFunction(torch.nn.Module):
     (jax.Arrays) and should return a single output (jax.Array).
 
     TODOs:
+
     - [ ] Test and add support for different combinations of .requires_grad in inputs.
     - [ ] Add support for multiple outputs instead of a single tensor.
     - [ ] Somehow support pytrees as inputs instead of just jax Arrays, maybe with a
@@ -44,36 +45,50 @@ class WrappedJaxFunction(torch.nn.Module):
 
     Suppose we have some jax function we'd like to use in a PyTorch model:
 
-    >>> import jax
-    >>> import jax.numpy as jnp
-    >>> def some_jax_function(params: jax.Array, x: jax.Array):
-    ...     '''Some toy function that takes in some parameters and an input vector.'''
-    ...     return jnp.dot(x, params)
+    ```python
+    import jax
+    import jax.numpy as jnp
+    def some_jax_function(params: jax.Array, x: jax.Array):
+        '''Some toy function that takes in some parameters and an input vector.'''
+        return jnp.dot(x, params)
+    ```
 
     By importing this:
-    >>> from torch_jax_interop import WrappedJaxFunction
+
+    ```python
+    from torch_jax_interop import WrappedJaxFunction
+    ```
 
     We can then wrap this jax function into a torch.nn.Module with learnable parameters:
-    >>> import torch
-    >>> import torch.nn
-    >>> module = WrappedJaxFunction(some_jax_function, jax.random.normal(jax.random.key(0), (2, 1)))
-    >>> module = module.to("cpu")  # jax arrays are on GPU by default, moving them to CPU for this example.
+
+    ```python
+    import torch
+    import torch.nn
+    module = WrappedJaxFunction(some_jax_function, jax.random.normal(jax.random.key(0), (2, 1)))
+    module = module.to("cpu")  # jax arrays are on GPU by default, moving them to CPU for this example.
+    ```
 
     The parameters are now learnable parameters of the module parameters:
-    >>> dict(module.state_dict())
+
+    ```python
+    dict(module.state_dict())
     {'params.0': tensor([[-0.7848],
             [ 0.8564]])}
+    ```
 
     You can use this just like any other torch.nn.Module:
-    >>> x, y = torch.randn(2), torch.rand(1)
-    >>> output = module(x)
-    >>> loss = torch.nn.functional.mse_loss(output, y)
-    >>> loss.backward()
 
-    >>> model = torch.nn.Sequential(
-    ...     torch.nn.Linear(123, 2),
-    ...     module,
-    ... )
+    ```python
+    x, y = torch.randn(2), torch.rand(1)
+    output = module(x)
+    loss = torch.nn.functional.mse_loss(output, y)
+    loss.backward()
+
+    model = torch.nn.Sequential(
+        torch.nn.Linear(123, 2),
+        module,
+    )
+    ```
     """
 
     @overload
@@ -495,8 +510,7 @@ class _JaxFunction(torch.autograd.Function, Generic[Params]):
 
 
 class _JaxScalarFunction(torch.autograd.Function, Generic[Params]):
-    """Wrapper for a jax scalar-valued function, making it usable in PyTorch's autograd
-    system.
+    """Wrapper for a jax scalar-valued function, making it usable in PyTorch's autograd system.
 
     This has potentially an advantage compared to `JaxFunction` (which is more general):
     It gets to use (and jit) the `jax.value_and_grad` of the function.

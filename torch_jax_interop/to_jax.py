@@ -34,33 +34,27 @@ logger = get_logger(__name__)
 
 
 @overload
-def torch_to_jax(value: torch.Tensor, /) -> jax.Array:
-    ...
+def torch_to_jax(value: torch.Tensor, /) -> jax.Array: ...
 
 
 @overload
-def torch_to_jax(value: torch.device, /) -> jax.Device:
-    ...
+def torch_to_jax(value: torch.device, /) -> jax.Device: ...
 
 
 @overload
-def torch_to_jax(value: tuple[torch.Tensor, ...], /) -> tuple[jax.Array, ...]:
-    ...
+def torch_to_jax(value: tuple[torch.Tensor, ...], /) -> tuple[jax.Array, ...]: ...
 
 
 @overload
-def torch_to_jax(value: list[torch.Tensor], /) -> list[jax.Array]:
-    ...
+def torch_to_jax(value: list[torch.Tensor], /) -> list[jax.Array]: ...
 
 
 @overload
-def torch_to_jax(value: NestedDict[K, torch.Tensor], /) -> NestedDict[K, jax.Array]:
-    ...
+def torch_to_jax(value: NestedDict[K, torch.Tensor], /) -> NestedDict[K, jax.Array]: ...
 
 
 @overload
-def torch_to_jax(value: Any, /) -> Any:
-    ...
+def torch_to_jax(value: Any, /) -> Any: ...
 
 
 def torch_to_jax(value: Any, /) -> Any:
@@ -102,7 +96,11 @@ def _direct_conversion(v: torch.Tensor) -> jax.Array:
 def _to_from_dlpack(
     v: torch.Tensor, ignore_deprecation_warning: bool = True
 ) -> jax.Array:
-    with warnings.catch_warnings() if ignore_deprecation_warning else contextlib.nullcontext():
+    with (
+        warnings.catch_warnings()
+        if ignore_deprecation_warning
+        else contextlib.nullcontext()
+    ):
         # Only way to get this to work for CPU seems to be with to/from dlpack... so we have to use this deprecated
         # conversion method for now.
         # todo: Should we let it though though?
@@ -144,7 +142,29 @@ def torch_to_jax_tensor(value: torch.Tensor) -> jax.Array:
             return _direct_conversion(value.flatten()).reshape(value.shape)
 
     try:
-        return _direct_conversion(value)
+        # Try using the "new" way to convert using from_dlpack directly
+        return jax_from_dlpack(
+            value, device=torch_to_jax_device(value.device), copy=None
+        )
+    except AssertionError as err:
+        if not err.args[0].startswith("Unexpected XLA layout override"):
+            raise
+        # Some "AssertionError: Unexpected XLA layout override"
+        # Try using the "old" way to convert using from_dlpack of a dlpack tensor.
+        try:
+            dlpack = torch_to_dlpack(value)
+            return jax_from_dlpack(dlpack, copy=False)
+        except jaxlib.xla_extension.XlaRuntimeError as err:
+            log_once(
+                logger,
+                message=(
+                    f"Unable to view tensor of shape {tuple(value.shape)} as a jax.Array in-place:\n"
+                    f"'{err}'\n"
+                    f"Tensors of this shape will be flattened and unflattened (which may or "
+                    f"may not involve making a copy of the tensor's data)."
+                ),
+                level=logging.WARNING,
+            )
     except jaxlib.xla_extension.XlaRuntimeError as err:
         log_once(
             logger,

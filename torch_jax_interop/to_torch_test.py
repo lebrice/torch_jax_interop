@@ -41,9 +41,7 @@ def test_jax_to_torch_tensor(
     if torch_dtype.is_floating_point:
         jax_value = jax.random.uniform(key=key, shape=shape, dtype=jax_dtype)
     else:
-        jax_value = jax.random.randint(
-            key=key, shape=shape, minval=0, maxval=100, dtype=jax_dtype
-        )
+        jax_value = jax.random.randint(key=key, shape=shape, minval=0, maxval=100, dtype=jax_dtype)
     jax_value = jax.device_put(jax_value, device=jax_device)
 
     torch_expected_device = jax_to_torch(jax_device)
@@ -88,9 +86,7 @@ class FooBar:
 
 
 @pytest.mark.parametrize("unsupported_value", [FooBar()])
-def test_log_once_on_unsupported_value(
-    unsupported_value: Any, caplog: pytest.LogCaptureFixture
-):
+def test_log_once_on_unsupported_value(unsupported_value: Any, caplog: pytest.LogCaptureFixture):
     with caplog.at_level(logging.DEBUG):
         assert jax_to_torch(unsupported_value) is unsupported_value
     assert len(caplog.records) == 1

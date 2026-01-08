@@ -5,12 +5,17 @@ readme = "README.md"
 authors = [
     { name = "Fabrice Normandin", email = "fabrice.normandin@gmail.com" },
 ]
-requires-python = ">=3.10"
-dependencies = ["jax>=0.4.28", "torch>=2.0.0"]
+requires-python = ">=3.11"
+dependencies = [
+    "jax>=0.6.0",
+    "torch",
+    # note: This is because of a weird bug where torch wants setuptools to build cpp extensions (seems related to torch.compile).
+    "setuptools; python_version == '3.11'",
+]
 dynamic = ["version"]
 
 [project.optional-dependencies]
-gpu = ["jax[cuda12]>=0.4.28; sys_platform == 'linux'"]
+gpu = ["jax[cuda13]; sys_platform == 'linux'"]
 
 
 [dependency-groups]

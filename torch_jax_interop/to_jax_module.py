@@ -26,9 +26,7 @@ logger = get_logger(__name__)
 
 def make_functional(
     module_with_state: Module[P, Out_cov], disable_autograd_tracking=False
-) -> tuple[
-    Callable[Concatenate[Iterable[torch.Tensor], P], Out_cov], tuple[torch.Tensor, ...]
-]:
+) -> tuple[Callable[Concatenate[Iterable[torch.Tensor], P], Out_cov], tuple[torch.Tensor, ...]]:
     """Backward compatibility equivalent for `functorch.make_functional` in the new torch.func API.
 
     Adapted from https://gist.github.com/zou3519/7769506acc899d83ef1464e28f22e6cf as suggested by
@@ -128,7 +126,10 @@ def torch_module_to_jax(
         if any(isinstance(v_i, jax.core.Tracer) for v_i in jax.tree.leaves(v)):
             # running inside JIT.
             return jax.pure_callback(
-                functools.partial(jax.tree.map, jax_to_torch), v, v, vectorized=True
+                functools.partial(jax.tree.map, jax_to_torch),
+                v,
+                v,
+                vmap_method="legacy_vectorized",
             )
         return jax.tree.map(jax_to_torch, v)
 
@@ -136,7 +137,10 @@ def torch_module_to_jax(
         if any(isinstance(v_i, jax.core.Tracer) for v_i in jax.tree.leaves(v)):
             # running inside JIT.
             return jax.pure_callback(
-                functools.partial(jax.tree.map, torch_to_jax), v, v, vectorized=True
+                functools.partial(jax.tree.map, torch_to_jax),
+                v,
+                v,
+                vmap_method="legacy_vectorized",
             )
         return jax.tree.map(torch_to_jax, v)
 
@@ -153,8 +157,7 @@ def torch_module_to_jax(
         # Apply the model function to the input data.
         if example_output is None:
             if any(
-                isinstance(v, jax.core.Tracer)
-                for v in jax.tree.leaves((params, args, kwargs))
+                isinstance(v, jax.core.Tracer) for v in jax.tree.leaves((params, args, kwargs))
             ):
                 raise RuntimeError(
                     "You need to pass `example_output` in order to JIT the torch function!"
@@ -186,7 +189,7 @@ def torch_module_to_jax(
             params,
             *args,
             **kwargs,
-            vectorized=True,
+            vmap_method="legacy_vectorized",
         )
         # Convert the output data from JAX to PyTorch representations
         out = t2j(out)
@@ -224,7 +227,7 @@ def torch_module_to_jax(
                 grads,
                 *args,
                 **kwargs,
-                vectorized=True,
+                vmap_method="legacy_vectorized",
             )
             in_grads = t2j(in_grads)
             return in_grads

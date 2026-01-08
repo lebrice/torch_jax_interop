@@ -5,12 +5,12 @@ readme = "README.md"
 authors = [
     { name = "Fabrice Normandin", email = "fabrice.normandin@gmail.com" },
 ]
-requires-python = ">=3.10"
-dependencies = ["jax>=0.4.28", "torch>=2.0.0"]
+requires-python = ">=3.11"
+dependencies = ["jax>=0.6.0", "torch"]
 dynamic = ["version"]
 
 [project.optional-dependencies]
-gpu = ["jax[cuda12]>=0.4.28; sys_platform == 'linux'"]
+gpu = ["jax[cuda13]; sys_platform == 'linux'"]
 
 
 [dependency-groups]

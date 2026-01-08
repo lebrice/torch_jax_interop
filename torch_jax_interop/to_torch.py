@@ -9,7 +9,6 @@ from typing import Any, Callable, overload
 
 import jax
 import torch
-from jax.dlpack import to_dlpack as jax_to_dlpack  # type: ignore (not exported there?)
 from torch.utils import dlpack as torch_dlpack
 
 from .types import Dataclass, DataclassType, K, NestedDict, NestedMapping
@@ -19,33 +18,27 @@ logger = get_logger(__name__)
 
 
 @overload
-def jax_to_torch(value: jax.Array, /) -> torch.Tensor:
-    ...
+def jax_to_torch(value: jax.Array, /) -> torch.Tensor: ...
 
 
 @overload
-def jax_to_torch(value: jax.Device, /) -> torch.device:
-    ...
+def jax_to_torch(value: jax.Device, /) -> torch.device: ...
 
 
 @overload
-def jax_to_torch(value: tuple[jax.Array, ...], /) -> tuple[torch.Tensor, ...]:
-    ...
+def jax_to_torch(value: tuple[jax.Array, ...], /) -> tuple[torch.Tensor, ...]: ...
 
 
 @overload
-def jax_to_torch(value: list[jax.Array], /) -> list[torch.Tensor]:
-    ...
+def jax_to_torch(value: list[jax.Array], /) -> list[torch.Tensor]: ...
 
 
 @overload
-def jax_to_torch(value: NestedDict[K, jax.Array], /) -> NestedDict[K, torch.Tensor]:
-    ...
+def jax_to_torch(value: NestedDict[K, jax.Array], /) -> NestedDict[K, torch.Tensor]: ...
 
 
 @overload
-def jax_to_torch(value: Any, /) -> Any:
-    ...
+def jax_to_torch(value: Any, /) -> Any: ...
 
 
 def jax_to_torch(value: Any, /) -> Any:
@@ -88,7 +81,7 @@ def jax_to_torch_tensor(value: jax.Array, /) -> torch.Tensor:
     try:
         return torch_dlpack.from_dlpack(value)
     except Exception:
-        return torch_dlpack.from_dlpack(jax_to_dlpack(value))
+        return torch_dlpack.from_dlpack(value.__dlpack__())
 
 
 # Register it like this so the type hints are preserved on the functions (which are also called
